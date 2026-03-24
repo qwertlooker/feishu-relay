@@ -46,7 +46,7 @@ try {
 async function addMessage(msg) {
   if (USE_REDIS) {
     try {
-      await redis.rpush('feishu:messages', msg);
+      await redis.rpush('feishu:messages', JSON.stringify(msg));
       await redis.ltrim('feishu:messages', -MAX_MESSAGES, -1);
     } catch (err) {
       console.error('[Redis] addMessage 失败', err);
@@ -61,7 +61,7 @@ async function getRecentMessages(count = 50) {
   if (USE_REDIS) {
     try {
       const msgs = await redis.lrange('feishu:messages', -count, -1);
-      return msgs;
+      return msgs.map(m => typeof m === 'string' ? JSON.parse(m) : m);
     } catch (err) {
       console.error('[Redis] getRecentMessages 失败', err);
       return [];
@@ -210,6 +210,81 @@ app.post('/api/send', authMiddleware, async (req, res) => {
     res.json({ ok: true, data: result.data });
   } catch (err) {
     console.error('[发送失败]', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 会话列表存储 API
+app.get('/api/convs', authMiddleware, async (req, res) => {
+  try {
+    if (USE_REDIS) {
+      const data = await redis.get('feishu:convs');
+      res.json({ ok: true, data: data ? JSON.parse(data) : [] });
+    } else {
+      res.json({ ok: true, data: [] });
+    }
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/convs', authMiddleware, async (req, res) => {
+  try {
+    if (USE_REDIS) {
+      await redis.set('feishu:convs', JSON.stringify(req.body));
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 草稿存储 API
+app.get('/api/drafts', authMiddleware, async (req, res) => {
+  try {
+    if (USE_REDIS) {
+      const data = await redis.get('feishu:drafts');
+      res.json({ ok: true, data: data ? JSON.parse(data) : {} });
+    } else {
+      res.json({ ok: true, data: {} });
+    }
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/drafts', authMiddleware, async (req, res) => {
+  try {
+    if (USE_REDIS) {
+      await redis.set('feishu:drafts', JSON.stringify(req.body));
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 主题设置 API
+app.get('/api/settings', authMiddleware, async (req, res) => {
+  try {
+    if (USE_REDIS) {
+      const data = await redis.get('feishu:settings');
+      res.json({ ok: true, data: data ? JSON.parse(data) : { theme: 'system' } });
+    } else {
+      res.json({ ok: true, data: { theme: 'system' } });
+    }
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/settings', authMiddleware, async (req, res) => {
+  try {
+    if (USE_REDIS) {
+      await redis.set('feishu:settings', JSON.stringify(req.body));
+    }
+    res.json({ ok: true });
+  } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });

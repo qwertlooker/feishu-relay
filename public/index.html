@@ -420,8 +420,8 @@ body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
 const S = {
   url: localStorage.getItem('relayUrl') || location.origin,
   token: localStorage.getItem('relayToken') || '',
-  theme: localStorage.getItem('theme') || 'system',
-  convs: JSON.parse(localStorage.getItem('convs') || '[]'),
+  theme: 'system',
+  convs: [],
   msgs: {},
   msgEls: {},
   cur: null,
@@ -430,17 +430,44 @@ const S = {
   contextMenuTarget: null,
   newMsgCount: 0,
   isNearBottom: true,
-  drafts: JSON.parse(localStorage.getItem('drafts') || '{}'),
+  drafts: {},
 };
+
+// 从服务端加载数据
+async function loadFromServer() {
+  if (!S.token) return;
+  try {
+    const [convsRes, draftsRes, settingsRes] = await Promise.all([
+      fetch(`${S.url}/api/convs?token=${encodeURIComponent(S.token)}`),
+      fetch(`${S.url}/api/drafts?token=${encodeURIComponent(S.token)}`),
+      fetch(`${S.url}/api/settings?token=${encodeURIComponent(S.token)}`),
+    ]);
+    const convsData = await convsRes.json();
+    const draftsData = await draftsRes.json();
+    const settingsData = await settingsRes.json();
+    if (convsData.ok) S.convs = convsData.data;
+    if (draftsData.ok) S.drafts = draftsData.data;
+    if (settingsData.ok) S.theme = settingsData.data.theme || 'system';
+  } catch (err) {
+    console.error('加载服务端数据失败:', err);
+  }
+}
 
 document.getElementById('cfgUrl').value = S.url;
 document.getElementById('cfgToken').value = S.token;
 document.getElementById('cfgChatId').value = localStorage.getItem('defaultChatId') || '';
 document.getElementById('cfgTheme').value = S.theme;
-initTheme();
-initEmojiPicker();
-renderConvs();
-if (S.token) connect();
+
+// 初始化：先加载服务端数据，再初始化界面
+async function init() {
+  await loadFromServer();
+  document.getElementById('cfgTheme').value = S.theme;
+  initTheme();
+  initEmojiPicker();
+  renderConvs();
+  if (S.token) connect();
+}
+init();
 
 // Close context menu on click elsewhere
 document.addEventListener('click', () => {
@@ -492,11 +519,24 @@ function updateThemeBtn() {
   btn.textContent = theme === 'dark' ? '🌙' : '☀️';
 }
 
-function cycleTheme() {
+async function saveSettings() {
+  if (!S.token) return;
+  try {
+    await fetch(`${S.url}/api/settings?token=${encodeURIComponent(S.token)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': S.token },
+      body: JSON.stringify({ theme: S.theme }),
+    });
+  } catch (err) {
+    console.error('保存设置失败:', err);
+  }
+}
+
+async function cycleTheme() {
   const themes = ['system', 'light', 'dark'];
   const idx = themes.indexOf(S.theme);
   S.theme = themes[(idx + 1) % themes.length];
-  localStorage.setItem('theme', S.theme);
+  await saveSettings();
   document.getElementById('cfgTheme').value = S.theme;
   initTheme();
   toast(`主题: ${S.theme === 'system' ? '跟随系统' : S.theme === 'light' ? '白天' : '黑夜'}`, 'info');
@@ -745,10 +785,19 @@ function closeImagePreview() {
 }
 
 // ── Draft Save ────────────────────────────────────────────────
-function saveDraft() {
+async function saveDraft() {
   if (S.cur) {
     S.drafts[S.cur] = document.getElementById('input').value;
-    localStorage.setItem('drafts', JSON.stringify(S.drafts));
+    if (!S.token) return;
+    try {
+      await fetch(`${S.url}/api/drafts?token=${encodeURIComponent(S.token)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': S.token },
+        body: JSON.stringify(S.drafts),
+      });
+    } catch (err) {
+      console.error('保存草稿失败:', err);
+    }
   }
 }
 
@@ -800,7 +849,18 @@ function addConv() {
   selectConv(id);
 }
 
-function saveConvs() { localStorage.setItem('convs', JSON.stringify(S.convs)); }
+async function saveConvs() {
+  if (!S.token) return;
+  try {
+    await fetch(`${S.url}/api/convs?token=${encodeURIComponent(S.token)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': S.token },
+      body: JSON.stringify(S.convs),
+    });
+  } catch (err) {
+    console.error('保存会话列表失败:', err);
+  }
+}
 
 function clearCurrentChat() {
   if (!S.cur) return;
@@ -870,7 +930,7 @@ async function send() {
   // Clear draft after sending
   if (S.drafts[S.cur]) {
     delete S.drafts[S.cur];
-    localStorage.setItem('drafts', JSON.stringify(S.drafts));
+    await saveDraft();
   }
   
   try {
@@ -901,14 +961,14 @@ function toggleConfig() {
   const el = document.getElementById('cfg');
   el.style.display = el.style.display==='none'?'block':'none';
 }
-function applyConfig() {
+async function applyConfig() {
   S.url = document.getElementById('cfgUrl').value.replace(/\/$/,'');
   S.token = document.getElementById('cfgToken').value.trim();
   S.theme = document.getElementById('cfgTheme').value;
   localStorage.setItem('relayUrl', S.url);
   localStorage.setItem('relayToken', S.token);
-  localStorage.setItem('theme', S.theme);
   localStorage.setItem('defaultChatId', document.getElementById('cfgChatId').value);
+  await saveSettings();
   initTheme();
   connect(); toggleConfig();
   toast('配置已保存', 'info');
@@ -958,9 +1018,23 @@ document.getElementById('input').addEventListener('keydown', e => {
 });
 document.getElementById('input').addEventListener('input', function(){ adjustTA(this); });
 
-// Save draft on page unload
+// Save draft on page unload (使用同步请求确保数据保存)
 window.addEventListener('beforeunload', () => {
-  saveDraft();
+  if (S.cur && S.token) {
+    S.drafts[S.cur] = document.getElementById('input').value;
+    const data = JSON.stringify(S.drafts);
+    const url = `${S.url}/api/drafts?token=${encodeURIComponent(S.token)}`;
+    // 使用同步 XMLHttpRequest 确保在页面关闭前完成保存
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, false);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('x-api-key', S.token);
+      xhr.send(data);
+    } catch (e) {
+      console.error('页面卸载时保存草稿失败:', e);
+    }
+  }
 });
 </script>
 </body>
