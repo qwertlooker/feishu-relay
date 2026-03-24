@@ -543,18 +543,32 @@ async function cycleTheme() {
 }
 
 // ── SSE ───────────────────────────────────────────────────────
-function connect() {
+async function connect() {
   if (!S.token) {
     toast('请先配置 API Token', 'err');
     return;
   }
+  
+  // 连接前先从服务端加载数据
+  await loadFromServer();
+  document.getElementById('cfgTheme').value = S.theme;
+  initTheme();
+  renderConvs();
+  
   if (S.es) { try { S.es.close(); } catch{} }
   const es = new EventSource(`${S.url}/api/events?token=${encodeURIComponent(S.token)}`);
   S.es = es;
 
   es.addEventListener('connected', () => setStatus(true));
-  es.addEventListener('message', e => onMsg(JSON.parse(e.data)));
-  es.addEventListener('history', e => JSON.parse(e.data).forEach(m => onMsg(m, true)));
+  es.addEventListener('message', e => onMsg(JSON.parse(e.data)).catch(console.error));
+  es.addEventListener('history', e => {
+    const msgs = JSON.parse(e.data);
+    (async () => {
+      for (const m of msgs) {
+        await onMsg(m, true);
+      }
+    })().catch(console.error);
+  });
   es.addEventListener('read', e => onReadReceipt(JSON.parse(e.data)));
   es.onerror = () => { setStatus(false); setTimeout(connect, 3000); };
 }
@@ -580,7 +594,7 @@ function onReadReceipt(data) {
 }
 
 // ── 消息处理 ──────────────────────────────────────────────────
-function onMsg(msg, isHistory = false) {
+async function onMsg(msg, isHistory = false) {
   if (!msg.chatId) return;
   if (!S.msgs[msg.chatId]) S.msgs[msg.chatId] = [];
   if (msg.id && S.msgs[msg.chatId].find(m => m.id === msg.id)) return;
@@ -595,9 +609,12 @@ function onMsg(msg, isHistory = false) {
       unread: 0,
     };
     S.convs.push(conv);
-    saveConvs();
+    await saveConvs();
   }
-  if (!isHistory && msg.chatId !== S.cur) conv.unread = (conv.unread || 0) + 1;
+  if (!isHistory && msg.chatId !== S.cur) {
+    conv.unread = (conv.unread || 0) + 1;
+    await saveConvs();
+  }
   renderConvs();
   if (msg.chatId === S.cur) {
     appendMsg(msg);
@@ -722,13 +739,13 @@ function deleteMessage() {
   document.getElementById('contextMenu').style.display = 'none';
 }
 
-function renameConv(convId) {
+async function renameConv(convId) {
   const conv = S.convs.find(c => c.id === convId);
   if (!conv) return;
   const newName = prompt('新名称:', conv.name);
   if (newName && newName.trim()) {
     conv.name = newName.trim();
-    saveConvs();
+    await saveConvs();
     renderConvs();
     if (S.cur === convId) {
       document.getElementById('hdName').textContent = conv.name;
@@ -736,10 +753,10 @@ function renameConv(convId) {
   }
 }
 
-function deleteConv(convId) {
+async function deleteConv(convId) {
   if (!confirm('确定删除这个会话？聊天记录将保留。')) return;
   S.convs = S.convs.filter(c => c.id !== convId);
-  saveConvs();
+  await saveConvs();
   renderConvs();
   if (S.cur === convId) {
     S.cur = null;
@@ -808,14 +825,14 @@ function loadDraft() {
   }
 }
 
-function selectConv(id) {
+async function selectConv(id) {
   // Save draft of previous conversation
-  saveDraft();
+  await saveDraft();
   
   S.cur = id;
   const c = S.convs.find(x=>x.id===id);
   if (c) c.unread = 0;
-  saveConvs(); renderConvs();
+  await saveConvs(); renderConvs();
 
   document.getElementById('empty').style.display = 'none';
   const cv = document.getElementById('chatView');
@@ -837,16 +854,16 @@ function selectConv(id) {
   document.getElementById('input').focus();
 }
 
-function addConv() {
+async function addConv() {
   const id = prompt('输入飞书 Chat ID\n（私聊: ou_xxx，群聊: oc_xxx）');
   if (!id?.trim()) return;
   const name = prompt('会话名称:') || id.slice(0,12);
   const type = id.startsWith('oc_') ? 'group' : 'p2p';
   if (!S.convs.find(c=>c.id===id)) {
     S.convs.push({ id, name, type, unread:0 });
-    saveConvs(); renderConvs();
+    await saveConvs(); renderConvs();
   }
-  selectConv(id);
+  await selectConv(id);
 }
 
 async function saveConvs() {
@@ -970,7 +987,10 @@ async function applyConfig() {
   localStorage.setItem('defaultChatId', document.getElementById('cfgChatId').value);
   await saveSettings();
   initTheme();
-  connect(); toggleConfig();
+  toggleConfig();
+  if (S.token) {
+    await connect();
+  }
   toast('配置已保存', 'info');
 }
 

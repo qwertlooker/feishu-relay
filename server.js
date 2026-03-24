@@ -23,11 +23,16 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── 消息存储（Redis 可选，无 Redis 时用内存） ─────────────────
+// ── 数据存储（Redis 可选，无 Redis 时用内存） ─────────────────
 let redis = null;
 let USE_REDIS = false;
 const messageStore = [];
 const MAX_MESSAGES = 500;
+
+// 内存存储（用于无 Redis 时）
+let inMemoryConvs = [];
+let inMemoryDrafts = {};
+let inMemorySettings = { theme: 'system' };
 
 try {
   if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
@@ -221,7 +226,7 @@ app.get('/api/convs', authMiddleware, async (req, res) => {
       const data = await redis.get('feishu:convs');
       res.json({ ok: true, data: data ? JSON.parse(data) : [] });
     } else {
-      res.json({ ok: true, data: [] });
+      res.json({ ok: true, data: inMemoryConvs });
     }
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -232,6 +237,8 @@ app.post('/api/convs', authMiddleware, async (req, res) => {
   try {
     if (USE_REDIS) {
       await redis.set('feishu:convs', JSON.stringify(req.body));
+    } else {
+      inMemoryConvs = req.body;
     }
     res.json({ ok: true });
   } catch (err) {
@@ -246,7 +253,7 @@ app.get('/api/drafts', authMiddleware, async (req, res) => {
       const data = await redis.get('feishu:drafts');
       res.json({ ok: true, data: data ? JSON.parse(data) : {} });
     } else {
-      res.json({ ok: true, data: {} });
+      res.json({ ok: true, data: inMemoryDrafts });
     }
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -257,6 +264,8 @@ app.post('/api/drafts', authMiddleware, async (req, res) => {
   try {
     if (USE_REDIS) {
       await redis.set('feishu:drafts', JSON.stringify(req.body));
+    } else {
+      inMemoryDrafts = req.body;
     }
     res.json({ ok: true });
   } catch (err) {
@@ -271,7 +280,7 @@ app.get('/api/settings', authMiddleware, async (req, res) => {
       const data = await redis.get('feishu:settings');
       res.json({ ok: true, data: data ? JSON.parse(data) : { theme: 'system' } });
     } else {
-      res.json({ ok: true, data: { theme: 'system' } });
+      res.json({ ok: true, data: inMemorySettings });
     }
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -282,6 +291,8 @@ app.post('/api/settings', authMiddleware, async (req, res) => {
   try {
     if (USE_REDIS) {
       await redis.set('feishu:settings', JSON.stringify(req.body));
+    } else {
+      inMemorySettings = req.body;
     }
     res.json({ ok: true });
   } catch (err) {
