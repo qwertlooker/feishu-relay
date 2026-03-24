@@ -27,13 +27,14 @@ cp .env.example .env
 
 必需的环境变量：
 
-| 变量 | 说明 |
-|------|------|
-| `FEISHU_APP_ID` | 飞书应用 App ID |
-| `FEISHU_APP_SECRET` | 飞书应用 App Secret |
-| `FEISHU_ENCRYPT_KEY` | 加密密钥（可选） |
-| `FEISHU_VERIFICATION_TOKEN` | 验证 Token（可选） |
-| `PORT` | 服务端口（默认 3000） |
+| 变量                          | 说明              |
+| --------------------------- | --------------- |
+| `FEISHU_APP_ID`             | 飞书应用 App ID     |
+| `FEISHU_APP_SECRET`         | 飞书应用 App Secret |
+| `FEISHU_ENCRYPT_KEY`        | 加密密钥（可选）        |
+| `FEISHU_VERIFICATION_TOKEN` | 验证 Token（可选）    |
+| `API_SECRET`                | API 密钥（必填，用于保护后端） |
+| `PORT`                      | 服务端口（默认 3000）   |
 
 ### 启动服务
 
@@ -108,30 +109,12 @@ docker run -d -p 3000:3000 --env-file .env feishu-relay
 
 这就是你的中转服务器地址！（免费 TLS 自动开启）
 
-### 第三步：前端部署到 Cloudflare Pages（永久免费 + 全球加速）
-
-把 index.html 单独上传到另一个 GitHub 仓库（或直接拖文件到 Cloudflare）。
-
-登录 `https://pages.cloudflare.com` → Connect to Git 或 Direct Upload。
-
-部署完成后得到 Pages URL，例如 `https://feishu-message.pages.dev`。
-
-### 第四步：连接前后端（30 秒）
-
 1. 打开你的前端页面 → 点击右上角 ⚙ 设置。
 2. 服务器地址填：`https://你的-render.onrender.com`
 3. 可选填默认 Chat ID。
 4. 点击保存并重连。
 
-大功告成！现在内网浏览器直接访问 Cloudflare Pages，前端通过 SSE 连接 Render 的 Node.js，后端维持飞书 WebSocket 长连接，所有功能（消息、已读、历史）完全和本地一样。
-
-### 实用提示（避免小坑）
-
-- **首次冷启动**：如果很久没人用（>15 分钟），打开前端页面后等 30–60 秒即可（Render 显示加载中）。
-- **日志查看**：Render 仪表盘有实时日志，飞书 WS 重连、错误一目了然。
-- **超过 750 小时**：如果多个用户常开页面超限，下月自动暂停（极少发生，个人/小团队够用）。想无限制只需升级 Starter 实例（$7/月）。
-- **自定义域名**：Render 和 Cloudflare Pages 都支持免费绑定域名。
-- **后续优化**：想加 Redis 防内存重启，Render 也有免费 Redis（但 90 天过期）。
+<br />
 
 ## 项目结构
 
@@ -144,3 +127,4 @@ feishu-relay/
 ├── dockerfile       # Docker 配置
 └── package.json    # 依赖配置
 ```
+

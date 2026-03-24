@@ -3,38 +3,71 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const lark = require('@larksuiteoapi/node-sdk');
-const { Redis } = require('@upstash/redis');   // ← 新增
+
+const API_SECRET = process.env.API_SECRET;
+const USE_AUTH = !!API_SECRET;
+
+function authMiddleware(req, res, next) {
+  if (!USE_AUTH) return next();
+  const queryToken = req.query.token;
+  const headerToken = req.headers['x-api-key'];
+  const clientToken = queryToken || headerToken;
+  if (clientToken !== API_SECRET) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+  next();
+}
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── Upstash Redis 客户端（持久化存储） ─────────────────────
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
-
+// ── 消息存储（Redis 可选，无 Redis 时用内存） ─────────────────
+let redis = null;
+let USE_REDIS = false;
+const messageStore = [];
 const MAX_MESSAGES = 500;
-const REDIS_KEY = 'feishu:messages';   // 所有消息存一个 list（够用）
+
+try {
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    const { Redis } = require('@upstash/redis');
+    redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+    USE_REDIS = true;
+    console.log('[Redis] 已连接 Upstash Redis');
+  }
+} catch (err) {
+  console.warn('[Redis] Redis 不可用，使用内存存储');
+}
 
 async function addMessage(msg) {
-  try {
-    await redis.rpush(REDIS_KEY, JSON.stringify(msg));
-    await redis.ltrim(REDIS_KEY, -MAX_MESSAGES, -1);  // 只保留最近 500 条
-  } catch (err) {
-    console.error('[Redis] addMessage 失败', err);
+  if (USE_REDIS) {
+    try {
+      await redis.rpush('feishu:messages', JSON.stringify(msg));
+      await redis.ltrim('feishu:messages', -MAX_MESSAGES, -1);
+    } catch (err) {
+      console.error('[Redis] addMessage 失败', err);
+    }
+  } else {
+    messageStore.push(msg);
+    if (messageStore.length > MAX_MESSAGES) messageStore.shift();
   }
 }
 
 async function getRecentMessages(count = 50) {
-  try {
-    const msgs = await redis.lrange(REDIS_KEY, -count, -1);
-    return msgs.map(m => JSON.parse(m));
-  } catch (err) {
-    console.error('[Redis] getRecentMessages 失败', err);
-    return [];
+  if (USE_REDIS) {
+    try {
+      const msgs = await redis.lrange('feishu:messages', -count, -1);
+      return msgs.map(m => JSON.parse(m));
+    } catch (err) {
+      console.error('[Redis] getRecentMessages 失败', err);
+      return [];
+    }
+  } else {
+    return messageStore.slice(-count);
   }
 }
 
@@ -116,7 +149,7 @@ startFeishuWS();
 
 // ── API 路由 ──────────────────────────────────────────────────
 
-app.get('/api/events', async (req, res) => {   // ← 加 async
+app.get('/api/events', authMiddleware, async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -142,7 +175,7 @@ app.get('/api/events', async (req, res) => {   // ← 加 async
   });
 });
 
-app.post('/api/send', async (req, res) => {
+app.post('/api/send', authMiddleware, async (req, res) => {
   const { chatId, message, msgType = 'text' } = req.body;
   if (!chatId || !message) {
     return res.status(400).json({ ok: false, error: 'chatId 和 message 不能为空' });
@@ -180,7 +213,7 @@ app.post('/api/send', async (req, res) => {
 });
 
 // 其他路由（/api/chats、/api/health）保持不变
-app.get('/api/chats', async (req, res) => {
+app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await feishuClient.im.chat.list({
       params: { page_size: 50, user_id_type: 'open_id' },

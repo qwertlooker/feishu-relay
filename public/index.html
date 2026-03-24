@@ -135,6 +135,8 @@ body { font-family:var(--font); background:var(--bg0); color:var(--tx1); display
     <div class="config" id="cfg">
       <div class="cfg-label">服务器地址</div>
       <input id="cfgUrl" placeholder="http://localhost:3000">
+      <div class="cfg-label" style="margin-top:8px;">API Token（必填）</div>
+      <input id="cfgToken" placeholder="你的 API 密钥">
       <div class="cfg-label" style="margin-top:8px;">Chat ID（可选默认目标）</div>
       <input id="cfgChatId" placeholder="oc_xxxxxxxx">
       <button class="cfg-btn" onclick="applyConfig()">保存并重连</button>
@@ -179,23 +181,29 @@ body { font-family:var(--font); background:var(--bg0); color:var(--tx1); display
 <script>
 const S = {
   url: localStorage.getItem('relayUrl') || location.origin,
+  token: localStorage.getItem('relayToken') || '',
   convs: JSON.parse(localStorage.getItem('convs') || '[]'),
-  msgs: {},      // chatId → [msg, ...]
-  msgEls: {},    // messageId → DOM element（用于更新已读状态）
+  msgs: {},
+  msgEls: {},
   cur: null,
   es: null,
   connected: false,
 };
 
 document.getElementById('cfgUrl').value = S.url;
+document.getElementById('cfgToken').value = S.token;
 document.getElementById('cfgChatId').value = localStorage.getItem('defaultChatId') || '';
 renderConvs();
-connect();
+if (S.token) connect();
 
 // ── SSE ───────────────────────────────────────────────────────
 function connect() {
+  if (!S.token) {
+    toast('请先配置 API Token', 'err');
+    return;
+  }
   if (S.es) { try { S.es.close(); } catch{} }
-  const es = new EventSource(`${S.url}/api/events`);
+  const es = new EventSource(`${S.url}/api/events?token=${encodeURIComponent(S.token)}`);
   S.es = es;
 
   es.addEventListener('connected', () => setStatus(true));
@@ -345,7 +353,10 @@ async function send() {
   try {
     const r = await fetch(`${S.url}/api/send`, {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key': S.token
+      },
       body:JSON.stringify({ chatId:S.cur, message:txt }),
     });
     const d = await r.json();
@@ -366,7 +377,9 @@ function toggleConfig() {
 }
 function applyConfig() {
   S.url = document.getElementById('cfgUrl').value.replace(/\/$/,'');
+  S.token = document.getElementById('cfgToken').value.trim();
   localStorage.setItem('relayUrl', S.url);
+  localStorage.setItem('relayToken', S.token);
   localStorage.setItem('defaultChatId', document.getElementById('cfgChatId').value);
   connect(); toggleConfig();
   toast('配置已保存，重新连接中…','info');
