@@ -46,7 +46,7 @@ try {
 async function addMessage(msg) {
   if (USE_REDIS) {
     try {
-      await redis.rpush('feishu:messages', JSON.stringify(msg));
+      await redis.rpush('feishu:messages', msg);
       await redis.ltrim('feishu:messages', -MAX_MESSAGES, -1);
     } catch (err) {
       console.error('[Redis] addMessage 失败', err);
@@ -61,7 +61,7 @@ async function getRecentMessages(count = 50) {
   if (USE_REDIS) {
     try {
       const msgs = await redis.lrange('feishu:messages', -count, -1);
-      return msgs.map(m => JSON.parse(m));
+      return msgs;
     } catch (err) {
       console.error('[Redis] getRecentMessages 失败', err);
       return [];
@@ -162,7 +162,9 @@ app.get('/api/events', authMiddleware, async (req, res) => {
 
   // 加载历史消息（从 Upstash 读取）
   const recent = await getRecentMessages(50);
+  console.log(`[SSE] 发送 ${recent.length} 条历史消息给 ${clientId}`);
   if (recent.length > 0) {
+    console.log(`[SSE] 历史消息示例:`, JSON.stringify(recent[0]).substring(0, 200));
     res.write(`event: history\ndata: ${JSON.stringify(recent)}\n\n`);
   }
 

@@ -101,6 +101,7 @@ docker run -d -p 3000:3000 --env-file .env feishu-relay
 - `FEISHU_APP_ID`
 - `FEISHU_APP_SECRET`
 - `FEISHU_ENCRYPT_KEY`
+- `API_SECRET`（重要！用于保护后端 API）
 - `PORT=3000`（可选）
 
 保存 → Render 会自动重启。
@@ -111,8 +112,9 @@ docker run -d -p 3000:3000 --env-file .env feishu-relay
 
 1. 打开你的前端页面 → 点击右上角 ⚙ 设置。
 2. 服务器地址填：`https://你的-render.onrender.com`
-3. 可选填默认 Chat ID。
-4. 点击保存并重连。
+3. API Token 填：`API_SECRET` 的值
+4. 可选填默认 Chat ID。
+5. 点击保存并重连。
 
 <br />
 
