@@ -137,6 +137,167 @@ body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
 
 /* ── Theme icons ── */
 .theme-icon { font-size:14px; line-height:1; }
+
+/* ── Context Menu ── */
+.context-menu {
+  position: fixed;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 0;
+  min-width: 120px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 1000;
+  animation: fadeIn 0.1s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
+.context-menu-item {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--tx1);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.context-menu-item:hover { background: var(--bg2); }
+.context-menu-item.danger { color: var(--danger); }
+.context-menu-item.danger:hover { background: rgba(248,113,113,0.1); }
+.context-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* ── Search Box ── */
+.search-box {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  display: none;
+}
+.search-box input {
+  width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--tx1);
+  font-size: 12px;
+  outline: none;
+}
+.search-box input:focus { border-color: var(--accent); }
+.search-highlight { background: rgba(79,142,247,0.3); border-radius: 2px; }
+
+/* ── Scroll to Bottom Button ── */
+.scroll-to-bottom {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: transform 0.15s, opacity 0.15s;
+  opacity: 0;
+  pointer-events: none;
+}
+.scroll-to-bottom.visible { opacity: 1; pointer-events: auto; }
+.scroll-to-bottom:hover { transform: scale(1.05); }
+.scroll-to-bottom .badge-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* ── Emoji Picker ── */
+.emoji-picker {
+  position: absolute;
+  bottom: 60px;
+  left: 18px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  display: none;
+  z-index: 100;
+}
+.emoji-picker.visible { display: grid; }
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.emoji-item {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.emoji-item:hover { background: var(--bg2); }
+
+/* ── Image Preview ── */
+.image-preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.9);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+.image-preview-overlay.visible { display: flex; }
+.image-preview-overlay img {
+  max-width: 90%;
+  max-height: 90%;
+  border-radius: 8px;
+}
+.image-preview-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+/* ── Loading Spinner ── */
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -179,7 +340,15 @@ body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
       <button class="cfg-btn" onclick="applyConfig()">保存</button>
     </div>
 
-    <div class="sidebar-section">会话 <span id="convCount" style="font-weight:normal;"></span></div>
+    <!-- Search Box -->
+    <div class="search-box" id="searchBox">
+      <input type="text" id="searchInput" placeholder="搜索消息..." oninput="searchMessages(this.value)">
+    </div>
+
+    <div class="sidebar-section">
+      会话 <span id="convCount" style="font-weight:normal;"></span>
+      <button onclick="toggleSearch()" style="float:right;background:none;border:none;color:var(--tx3);cursor:pointer;font-size:11px;padding:0 4px;" title="搜索">🔍</button>
+    </div>
     <div class="conv-list" id="convList"></div>
     <button class="add-btn" onclick="addConv()">＋ 添加会话</button>
   </div>
@@ -206,18 +375,46 @@ body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
         </div>
       </div>
       <div class="msgs" id="msgs"></div>
+      <!-- Emoji Picker -->
+      <div class="emoji-picker" id="emojiPicker">
+        <div class="emoji-grid" id="emojiGrid"></div>
+      </div>
+
       <div class="input-wrap">
         <div class="input-row">
+          <button onclick="toggleEmojiPicker()" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:18px;padding:8px;" title="表情">😊</button>
           <textarea class="msg-input" id="input" placeholder="输入消息… Enter 发送 · Shift+Enter 换行" rows="1"></textarea>
           <button class="send-btn" id="sendBtn" onclick="send()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="white" id="sendIcon"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
           </button>
         </div>
+      </div>
+
+      <!-- Scroll to Bottom Button -->
+      <div class="scroll-to-bottom" id="scrollToBottom" onclick="scrollToBottomAndClear()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tx2)" stroke-width="2">
+          <path d="M12 5v14M5 12l7 7 7-7"/>
+        </svg>
+        <span class="badge-count" id="newMsgCount" style="display:none;">0</span>
       </div>
     </div>
   </div>
 </div>
 <div class="toasts" id="toasts"></div>
+
+<!-- Context Menu -->
+<div class="context-menu" id="contextMenu" style="display:none;">
+  <div class="context-menu-item" onclick="copyMessageText()">复制文本</div>
+  <div class="context-menu-item" onclick="copyMessageId()">复制消息ID</div>
+  <div class="context-menu-divider"></div>
+  <div class="context-menu-item danger" onclick="deleteMessage()">删除消息</div>
+</div>
+
+<!-- Image Preview -->
+<div class="image-preview-overlay" id="imagePreview" onclick="closeImagePreview()">
+  <button class="image-preview-close" onclick="closeImagePreview(); event.stopPropagation();">×</button>
+  <img id="previewImg" src="" alt="预览">
+</div>
 
 <script>
 const S = {
@@ -230,6 +427,10 @@ const S = {
   cur: null,
   es: null,
   connected: false,
+  contextMenuTarget: null,
+  newMsgCount: 0,
+  isNearBottom: true,
+  drafts: JSON.parse(localStorage.getItem('drafts') || '{}'),
 };
 
 document.getElementById('cfgUrl').value = S.url;
@@ -237,8 +438,36 @@ document.getElementById('cfgToken').value = S.token;
 document.getElementById('cfgChatId').value = localStorage.getItem('defaultChatId') || '';
 document.getElementById('cfgTheme').value = S.theme;
 initTheme();
+initEmojiPicker();
 renderConvs();
 if (S.token) connect();
+
+// Close context menu on click elsewhere
+document.addEventListener('click', () => {
+  document.getElementById('contextMenu').style.display = 'none';
+});
+
+// Close emoji picker on click elsewhere
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.emoji-picker') && !e.target.closest('[onclick="toggleEmojiPicker()"]')) {
+    document.getElementById('emojiPicker').classList.remove('visible');
+  }
+});
+
+// Scroll detection for scroll-to-bottom button
+const msgsContainer = document.getElementById('msgs');
+if (msgsContainer) {
+  msgsContainer.addEventListener('scroll', () => {
+    const threshold = 100;
+    const isBottom = msgsContainer.scrollHeight - msgsContainer.scrollTop - msgsContainer.clientHeight < threshold;
+    S.isNearBottom = isBottom;
+    if (isBottom) {
+      document.getElementById('scrollToBottom').classList.remove('visible');
+      S.newMsgCount = 0;
+      document.getElementById('newMsgCount').style.display = 'none';
+    }
+  });
+}
 
 function initTheme() {
   const stored = S.theme;
@@ -330,13 +559,25 @@ function onMsg(msg, isHistory = false) {
   }
   if (!isHistory && msg.chatId !== S.cur) conv.unread = (conv.unread || 0) + 1;
   renderConvs();
-  if (msg.chatId === S.cur) { appendMsg(msg); scrollBottom(); }
+  if (msg.chatId === S.cur) {
+    appendMsg(msg);
+    if (isHistory) {
+      scrollBottom();
+    } else if (S.isNearBottom) {
+      scrollBottom();
+    } else {
+      S.newMsgCount++;
+      document.getElementById('newMsgCount').textContent = S.newMsgCount;
+      document.getElementById('newMsgCount').style.display = 'block';
+      document.getElementById('scrollToBottom').classList.add('visible');
+    }
+  }
 }
 
 // ── Conversations ─────────────────────────────────────────────
 function renderConvs() {
   document.getElementById('convList').innerHTML = S.convs.map(c => `
-    <div class="conv-item${c.id===S.cur?' active':''}" onclick="selectConv('${c.id}')">
+    <div class="conv-item${c.id===S.cur?' active':''}" onclick="selectConv('${c.id}')" oncontextmenu="showConvContextMenu(event, '${c.id}')">
       <div class="avatar" style="background:${strColor(c.id)}">${c.name[0]}</div>
       <div class="conv-meta">
         <div class="conv-name">${esc(c.name)}</div>
@@ -347,7 +588,181 @@ function renderConvs() {
   document.getElementById('convCount').textContent = `(${S.convs.length})`;
 }
 
+// ── 搜索功能 ──────────────────────────────────────────────────
+function toggleSearch() {
+  const box = document.getElementById('searchBox');
+  box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  if (box.style.display === 'block') {
+    document.getElementById('searchInput').focus();
+  } else {
+    document.getElementById('searchInput').value = '';
+    searchMessages('');
+  }
+}
+
+function searchMessages(query) {
+  if (!S.cur || !query) {
+    document.querySelectorAll('.msg').forEach(el => {
+      el.style.display = 'flex';
+      const bubble = el.querySelector('.bubble');
+      if (bubble) bubble.innerHTML = bubble.innerHTML.replace(/<span class="search-highlight">(.*?)<\/span>/g, '$1');
+    });
+    return;
+  }
+  const msgs = S.msgs[S.cur] || [];
+  document.querySelectorAll('.msg').forEach((el, idx) => {
+    const msg = msgs[idx];
+    if (!msg) return;
+    const text = extractText(msg).toLowerCase();
+    if (text.includes(query.toLowerCase())) {
+      el.style.display = 'flex';
+      const bubble = el.querySelector('.bubble');
+      if (bubble) {
+        const txt = extractText(msg);
+        const regex = new RegExp(`(${escRegex(query)})`, 'gi');
+        bubble.innerHTML = esc(txt).replace(regex, '<span class="search-highlight">$1</span>');
+      }
+    } else {
+      el.style.display = 'none';
+    }
+  });
+}
+
+function escRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ── 右键菜单 ──────────────────────────────────────────────────
+function showContextMenu(event, msgId) {
+  event.preventDefault();
+  S.contextMenuTarget = msgId;
+  const menu = document.getElementById('contextMenu');
+  menu.style.display = 'block';
+  menu.style.left = Math.min(event.pageX, window.innerWidth - 150) + 'px';
+  menu.style.top = Math.min(event.pageY, window.innerHeight - 100) + 'px';
+}
+
+function showConvContextMenu(event, convId) {
+  event.preventDefault();
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.style.cssText = `position:fixed;left:${event.pageX}px;top:${event.pageY}px;z-index:1000;display:block;`;
+  menu.innerHTML = `
+    <div class="context-menu-item" onclick="renameConv('${convId}')">重命名</div>
+    <div class="context-menu-item danger" onclick="deleteConv('${convId}')">删除会话</div>
+  `;
+  document.body.appendChild(menu);
+  const closeMenu = () => { menu.remove(); document.removeEventListener('click', closeMenu); };
+  setTimeout(() => document.addEventListener('click', closeMenu), 0);
+}
+
+function copyMessageText() {
+  if (!S.contextMenuTarget || !S.cur) return;
+  const msg = S.msgs[S.cur].find(m => m.id === S.contextMenuTarget);
+  if (msg) {
+    navigator.clipboard.writeText(extractText(msg)).then(() => toast('文本已复制', 'ok'));
+  }
+  document.getElementById('contextMenu').style.display = 'none';
+}
+
+function copyMessageId() {
+  if (!S.contextMenuTarget) return;
+  navigator.clipboard.writeText(S.contextMenuTarget).then(() => toast('消息ID已复制', 'ok'));
+  document.getElementById('contextMenu').style.display = 'none';
+}
+
+function deleteMessage() {
+  if (!S.contextMenuTarget || !S.cur) return;
+  if (!confirm('确定删除这条消息？')) return;
+  S.msgs[S.cur] = S.msgs[S.cur].filter(m => m.id !== S.contextMenuTarget);
+  const el = S.msgEls[S.contextMenuTarget];
+  if (el) el.remove();
+  delete S.msgEls[S.contextMenuTarget];
+  toast('消息已删除', 'ok');
+  document.getElementById('contextMenu').style.display = 'none';
+}
+
+function renameConv(convId) {
+  const conv = S.convs.find(c => c.id === convId);
+  if (!conv) return;
+  const newName = prompt('新名称:', conv.name);
+  if (newName && newName.trim()) {
+    conv.name = newName.trim();
+    saveConvs();
+    renderConvs();
+    if (S.cur === convId) {
+      document.getElementById('hdName').textContent = conv.name;
+    }
+  }
+}
+
+function deleteConv(convId) {
+  if (!confirm('确定删除这个会话？聊天记录将保留。')) return;
+  S.convs = S.convs.filter(c => c.id !== convId);
+  saveConvs();
+  renderConvs();
+  if (S.cur === convId) {
+    S.cur = null;
+    document.getElementById('chatView').style.display = 'none';
+    document.getElementById('empty').style.display = 'flex';
+  }
+}
+
+// ── Emoji Picker ──────────────────────────────────────────────
+function initEmojiPicker() {
+  const emojis = ['😀','😃','😄','😁','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾'];
+  const grid = document.getElementById('emojiGrid');
+  grid.innerHTML = emojis.map(e => `<div class="emoji-item" onclick="insertEmoji('${e}')">${e}</div>`).join('');
+}
+
+function toggleEmojiPicker() {
+  document.getElementById('emojiPicker').classList.toggle('visible');
+}
+
+function insertEmoji(emoji) {
+  const input = document.getElementById('input');
+  input.value += emoji;
+  input.focus();
+  adjustTA(input);
+}
+
+// ── Scroll to Bottom ─────────────────────────────────────────
+function scrollToBottomAndClear() {
+  scrollBottom();
+  S.newMsgCount = 0;
+  document.getElementById('newMsgCount').style.display = 'none';
+  document.getElementById('scrollToBottom').classList.remove('visible');
+}
+
+// ── Image Preview ─────────────────────────────────────────────
+function showImagePreview(src) {
+  document.getElementById('previewImg').src = src;
+  document.getElementById('imagePreview').classList.add('visible');
+}
+
+function closeImagePreview() {
+  document.getElementById('imagePreview').classList.remove('visible');
+}
+
+// ── Draft Save ────────────────────────────────────────────────
+function saveDraft() {
+  if (S.cur) {
+    S.drafts[S.cur] = document.getElementById('input').value;
+    localStorage.setItem('drafts', JSON.stringify(S.drafts));
+  }
+}
+
+function loadDraft() {
+  if (S.cur && S.drafts[S.cur]) {
+    document.getElementById('input').value = S.drafts[S.cur];
+    adjustTA(document.getElementById('input'));
+  }
+}
+
 function selectConv(id) {
+  // Save draft of previous conversation
+  saveDraft();
+  
   S.cur = id;
   const c = S.convs.find(x=>x.id===id);
   if (c) c.unread = 0;
@@ -366,6 +781,10 @@ function selectConv(id) {
   S.msgEls = {};
   (S.msgs[id]||[]).forEach(appendMsg);
   scrollBottom();
+  
+  // Load draft for new conversation
+  document.getElementById('input').value = '';
+  loadDraft();
   document.getElementById('input').focus();
 }
 
@@ -387,10 +806,8 @@ function clearCurrentChat() {
   if (!S.cur) return;
   if (!confirm('确定清空当前聊天记录？')) return;
   S.msgs[S.cur] = [];
-  if (S.cur === S.cur) {
-    document.getElementById('msgs').innerHTML = '';
-    S.msgEls = {};
-  }
+  document.getElementById('msgs').innerHTML = '';
+  S.msgEls = {};
   toast('聊天记录已清空', 'ok');
 }
 
@@ -410,6 +827,11 @@ function appendMsg(msg) {
   const d = document.createElement('div');
   d.className = `msg ${out?'out':'in'}`;
   if (msg.id) d.dataset.msgId = msg.id;
+  
+  // Add right-click context menu
+  if (msg.id) {
+    d.oncontextmenu = (e) => showContextMenu(e, msg.id);
+  }
 
   const tickHtml = out ? `<span class="read-tick pending" title="已发送">✓</span>` : '';
 
@@ -435,8 +857,22 @@ async function send() {
   const txt = inp.value.trim();
   if (!txt || !S.cur) return;
   const btn = document.getElementById('sendBtn');
+  const icon = document.getElementById('sendIcon');
+  
+  // Show loading state
   btn.disabled = true;
+  icon.style.display = 'none';
+  btn.innerHTML = '<div class="spinner"></div>';
+  
+  const draft = txt;
   inp.value = ''; adjustTA(inp);
+  
+  // Clear draft after sending
+  if (S.drafts[S.cur]) {
+    delete S.drafts[S.cur];
+    localStorage.setItem('drafts', JSON.stringify(S.drafts));
+  }
+  
   try {
     const r = await fetch(`${S.url}/api/send`, {
       method:'POST',
@@ -444,15 +880,18 @@ async function send() {
         'Content-Type':'application/json',
         'x-api-key': S.token
       },
-      body:JSON.stringify({ chatId:S.cur, message:txt }),
+      body:JSON.stringify({ chatId:S.cur, message:draft }),
     });
     const d = await r.json();
     if (!d.ok) throw new Error(d.error);
   } catch(e) {
     toast(e.message, 'err');
-    inp.value = txt;
+    inp.value = draft;
+    adjustTA(inp);
   } finally {
+    // Restore button
     btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="white" id="sendIcon"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
     inp.focus();
   }
 }
@@ -518,6 +957,11 @@ document.getElementById('input').addEventListener('keydown', e => {
   if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
 document.getElementById('input').addEventListener('input', function(){ adjustTA(this); });
+
+// Save draft on page unload
+window.addEventListener('beforeunload', () => {
+  saveDraft();
+});
 </script>
 </body>
 </html>
