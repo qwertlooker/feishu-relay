@@ -435,8 +435,13 @@ const S = {
 
 // 从服务端加载数据
 async function loadFromServer() {
-  if (!S.token) return;
+  console.log('[前端] loadFromServer() 被调用');
+  if (!S.token) {
+    console.warn('[前端] loadFromServer() 没有 token，跳过');
+    return;
+  }
   try {
+    console.log('[前端] 从服务端加载数据...');
     const [convsRes, draftsRes, settingsRes] = await Promise.all([
       fetch(`${S.url}/api/convs?token=${encodeURIComponent(S.token)}`),
       fetch(`${S.url}/api/drafts?token=${encodeURIComponent(S.token)}`),
@@ -445,11 +450,15 @@ async function loadFromServer() {
     const convsData = await convsRes.json();
     const draftsData = await draftsRes.json();
     const settingsData = await settingsRes.json();
+    console.log('[前端] 会话列表:', convsData);
+    console.log('[前端] 草稿:', draftsData);
+    console.log('[前端] 设置:', settingsData);
     if (convsData.ok) S.convs = convsData.data;
     if (draftsData.ok) S.drafts = draftsData.data;
     if (settingsData.ok) S.theme = settingsData.data.theme || 'system';
+    console.log('[前端] 数据加载完成，S.convs=', S.convs, 'S.drafts=', S.drafts, 'S.theme=', S.theme);
   } catch (err) {
-    console.error('加载服务端数据失败:', err);
+    console.error('[前端] 加载服务端数据失败:', err);
   }
 }
 
@@ -520,15 +529,21 @@ function updateThemeBtn() {
 }
 
 async function saveSettings() {
-  if (!S.token) return;
+  console.log('[前端] saveSettings() 被调用，主题:', S.theme);
+  if (!S.token) {
+    console.warn('[前端] saveSettings() 没有 token，跳过');
+    return;
+  }
   try {
-    await fetch(`${S.url}/api/settings?token=${encodeURIComponent(S.token)}`, {
+    const res = await fetch(`${S.url}/api/settings?token=${encodeURIComponent(S.token)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': S.token },
       body: JSON.stringify({ theme: S.theme }),
     });
+    const data = await res.json();
+    console.log('[前端] saveSettings() 返回:', data);
   } catch (err) {
-    console.error('保存设置失败:', err);
+    console.error('[前端] 保存设置失败:', err);
   }
 }
 
@@ -803,17 +818,23 @@ function closeImagePreview() {
 
 // ── Draft Save ────────────────────────────────────────────────
 async function saveDraft() {
+  console.log('[前端] saveDraft() 被调用，数据:', S.drafts);
   if (S.cur) {
     S.drafts[S.cur] = document.getElementById('input').value;
-    if (!S.token) return;
+    if (!S.token) {
+      console.warn('[前端] saveDraft() 没有 token，跳过');
+      return;
+    }
     try {
-      await fetch(`${S.url}/api/drafts?token=${encodeURIComponent(S.token)}`, {
+      const res = await fetch(`${S.url}/api/drafts?token=${encodeURIComponent(S.token)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': S.token },
         body: JSON.stringify(S.drafts),
       });
+      const data = await res.json();
+      console.log('[前端] saveDraft() 返回:', data);
     } catch (err) {
-      console.error('保存草稿失败:', err);
+      console.error('[前端] 保存草稿失败:', err);
     }
   }
 }
@@ -867,15 +888,21 @@ async function addConv() {
 }
 
 async function saveConvs() {
-  if (!S.token) return;
+  console.log('[前端] saveConvs() 被调用，数据:', S.convs);
+  if (!S.token) {
+    console.warn('[前端] saveConvs() 没有 token，跳过');
+    return;
+  }
   try {
-    await fetch(`${S.url}/api/convs?token=${encodeURIComponent(S.token)}`, {
+    const res = await fetch(`${S.url}/api/convs?token=${encodeURIComponent(S.token)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': S.token },
       body: JSON.stringify(S.convs),
     });
+    const data = await res.json();
+    console.log('[前端] saveConvs() 返回:', data);
   } catch (err) {
-    console.error('保存会话列表失败:', err);
+    console.error('[前端] 保存会话列表失败:', err);
   }
 }
 
@@ -933,12 +960,14 @@ async function send() {
   const inp = document.getElementById('input');
   const txt = inp.value.trim();
   if (!txt || !S.cur) return;
+  
   const btn = document.getElementById('sendBtn');
-  const icon = document.getElementById('sendIcon');
+  
+  // 防止重复发送
+  if (btn.disabled) return;
   
   // Show loading state
   btn.disabled = true;
-  icon.style.display = 'none';
   btn.innerHTML = '<div class="spinner"></div>';
   
   const draft = txt;

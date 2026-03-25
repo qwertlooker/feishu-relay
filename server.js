@@ -23,56 +23,41 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── 数据存储（Redis 可选，无 Redis 时用内存） ─────────────────
+// ── 消息存储（必须使用 Redis） ───────────────────────────────
 let redis = null;
-let USE_REDIS = false;
-const messageStore = [];
 const MAX_MESSAGES = 500;
 
-// 内存存储（用于无 Redis 时）
-let inMemoryConvs = [];
-let inMemoryDrafts = {};
-let inMemorySettings = { theme: 'system' };
-
 try {
-  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    const { Redis } = require('@upstash/redis');
-    redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-    USE_REDIS = true;
-    console.log('[Redis] 已连接 Upstash Redis');
+  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+    throw new Error('缺少 Redis 配置：必须设置 UPSTASH_REDIS_REST_URL 和 UPSTASH_REDIS_REST_TOKEN');
   }
+  const { Redis } = require('@upstash/redis');
+  redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  });
+  console.log('[Redis] 已连接 Upstash Redis');
 } catch (err) {
-  console.warn('[Redis] Redis 不可用，使用内存存储');
+  console.error('[Redis] Redis 连接失败:', err.message);
+  process.exit(1);
 }
 
 async function addMessage(msg) {
-  if (USE_REDIS) {
-    try {
-      await redis.rpush('feishu:messages', JSON.stringify(msg));
-      await redis.ltrim('feishu:messages', -MAX_MESSAGES, -1);
-    } catch (err) {
-      console.error('[Redis] addMessage 失败', err);
-    }
-  } else {
-    messageStore.push(msg);
-    if (messageStore.length > MAX_MESSAGES) messageStore.shift();
+  try {
+    await redis.rpush('feishu:messages', msg);
+    await redis.ltrim('feishu:messages', -MAX_MESSAGES, -1);
+  } catch (err) {
+    console.error('[Redis] addMessage 失败', err);
   }
 }
 
 async function getRecentMessages(count = 50) {
-  if (USE_REDIS) {
-    try {
-      const msgs = await redis.lrange('feishu:messages', -count, -1);
-      return msgs.map(m => typeof m === 'string' ? JSON.parse(m) : m);
-    } catch (err) {
-      console.error('[Redis] getRecentMessages 失败', err);
-      return [];
-    }
-  } else {
-    return messageStore.slice(-count);
+  try {
+    const msgs = await redis.lrange('feishu:messages', -count, -1);
+    return msgs.filter(m => m !== null);
+  } catch (err) {
+    console.error('[Redis] getRecentMessages 失败', err);
+    return [];
   }
 }
 
@@ -221,81 +206,78 @@ app.post('/api/send', authMiddleware, async (req, res) => {
 
 // 会话列表存储 API
 app.get('/api/convs', authMiddleware, async (req, res) => {
+  console.log('[API] GET /api/convs');
   try {
-    if (USE_REDIS) {
-      const data = await redis.get('feishu:convs');
-      res.json({ ok: true, data: data ? JSON.parse(data) : [] });
-    } else {
-      res.json({ ok: true, data: inMemoryConvs });
-    }
+    const data = await redis.get('feishu:convs');
+    const result = data || [];
+    console.log('[API] GET /api/convs 返回:', result.length, '条记录');
+    res.json({ ok: true, data: result });
   } catch (err) {
+    console.error('[API] GET /api/convs 错误:', err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 app.post('/api/convs', authMiddleware, async (req, res) => {
+  console.log('[API] POST /api/convs, 数据:', req.body);
   try {
-    if (USE_REDIS) {
-      await redis.set('feishu:convs', JSON.stringify(req.body));
-    } else {
-      inMemoryConvs = req.body;
-    }
+    await redis.set('feishu:convs', req.body);
+    console.log('[API] POST /api/convs 保存成功');
     res.json({ ok: true });
   } catch (err) {
+    console.error('[API] POST /api/convs 错误:', err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 // 草稿存储 API
 app.get('/api/drafts', authMiddleware, async (req, res) => {
+  console.log('[API] GET /api/drafts');
   try {
-    if (USE_REDIS) {
-      const data = await redis.get('feishu:drafts');
-      res.json({ ok: true, data: data ? JSON.parse(data) : {} });
-    } else {
-      res.json({ ok: true, data: inMemoryDrafts });
-    }
+    const data = await redis.get('feishu:drafts');
+    const result = data || {};
+    console.log('[API] GET /api/drafts 返回:', Object.keys(result).length, '条草稿');
+    res.json({ ok: true, data: result });
   } catch (err) {
+    console.error('[API] GET /api/drafts 错误:', err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 app.post('/api/drafts', authMiddleware, async (req, res) => {
+  console.log('[API] POST /api/drafts, 数据:', req.body);
   try {
-    if (USE_REDIS) {
-      await redis.set('feishu:drafts', JSON.stringify(req.body));
-    } else {
-      inMemoryDrafts = req.body;
-    }
+    await redis.set('feishu:drafts', req.body);
+    console.log('[API] POST /api/drafts 保存成功');
     res.json({ ok: true });
   } catch (err) {
+    console.error('[API] POST /api/drafts 错误:', err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 // 主题设置 API
 app.get('/api/settings', authMiddleware, async (req, res) => {
+  console.log('[API] GET /api/settings');
   try {
-    if (USE_REDIS) {
-      const data = await redis.get('feishu:settings');
-      res.json({ ok: true, data: data ? JSON.parse(data) : { theme: 'system' } });
-    } else {
-      res.json({ ok: true, data: inMemorySettings });
-    }
+    const data = await redis.get('feishu:settings');
+    const result = data || { theme: 'system' };
+    console.log('[API] GET /api/settings 返回:', result);
+    res.json({ ok: true, data: result });
   } catch (err) {
+    console.error('[API] GET /api/settings 错误:', err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 app.post('/api/settings', authMiddleware, async (req, res) => {
+  console.log('[API] POST /api/settings, 数据:', req.body);
   try {
-    if (USE_REDIS) {
-      await redis.set('feishu:settings', JSON.stringify(req.body));
-    } else {
-      inMemorySettings = req.body;
-    }
+    await redis.set('feishu:settings', req.body);
+    console.log('[API] POST /api/settings 保存成功');
     res.json({ ok: true });
   } catch (err) {
+    console.error('[API] POST /api/settings 错误:', err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
