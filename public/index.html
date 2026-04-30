@@ -101,7 +101,7 @@ body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
 .bubble { padding:9px 13px; border-radius:12px; font-size:13.5px; line-height:1.55; word-break:break-word; white-space:pre-wrap; }
 .msg.in .bubble { background:var(--bubble-in); border-bottom-left-radius:4px; }
 .msg.out .bubble { background:var(--bubble-out); border-bottom-right-radius:4px; }
-.msg-time { font-size:10px; color:var(--tx3); margin-top:3px; padding:0 3px; display:flex; align-items:center; gap:3px; }
+.msg-time { font-size:11px; color:var(--tx3); margin-top:4px; padding:0 3px; display:flex; align-items:center; gap:4px; }
 .msg.out .msg-time { justify-content:flex-end; }
 
 .read-tick { color:var(--accent2); font-size:11px; line-height:1; }
@@ -1037,8 +1037,22 @@ function extractText(msg) {
 
 function fmtTime(ts) {
   if (!ts) return '';
-  const d = new Date(ts.length>10 ? +ts : +ts*1000);
-  return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+  const raw = typeof ts === 'number' ? ts : Number(ts);
+  const d = new Date(raw > 1e12 ? raw : raw * 1000);
+  if (Number.isNaN(d.getTime())) return '';
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.floor((startOfToday - startOfDate) / 86400000);
+  const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  if (diffDays === 0) return time;
+  if (diffDays === 1) return `昨天 ${time}`;
+  if (d.getFullYear() === now.getFullYear()) {
+    return `${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
+  }
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
 }
 
 function esc(s) {
