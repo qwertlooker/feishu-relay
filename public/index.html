@@ -876,12 +876,14 @@ async function selectConv(id) {
 }
 
 async function addConv() {
-  const id = prompt('输入飞书 Chat ID\n（私聊: ou_xxx，群聊: oc_xxx）');
-  if (!id?.trim()) return;
-  const name = prompt('会话名称:') || id.slice(0,12);
-  const type = id.startsWith('oc_') ? 'group' : 'p2p';
+  const input = prompt('输入飞书接收 ID\n（私聊用户 Open ID: ou_xxx，群聊 Chat ID: oc_xxx）');
+  const id = input?.trim();
+  if (!id) return;
+  const name = prompt('会话名称:')?.trim() || id.slice(0,12);
+  const receiveIdType = id.startsWith('ou_') ? 'open_id' : 'chat_id';
+  const type = receiveIdType === 'chat_id' ? 'group' : 'p2p';
   if (!S.convs.find(c=>c.id===id)) {
-    S.convs.push({ id, name, type, unread:0 });
+    S.convs.push({ id, name, type, receiveIdType, unread:0 });
     await saveConvs(); renderConvs();
   }
   await selectConv(id);
@@ -980,13 +982,18 @@ async function send() {
   }
   
   try {
+    const conv = S.convs.find(c => c.id === S.cur);
     const r = await fetch(`${S.url}/api/send`, {
       method:'POST',
       headers:{
         'Content-Type':'application/json',
         'x-api-key': S.token
       },
-      body:JSON.stringify({ chatId:S.cur, message:draft }),
+      body:JSON.stringify({
+        chatId:S.cur,
+        message:draft,
+        receiveIdType:conv?.receiveIdType,
+      }),
     });
     const d = await r.json();
     if (!d.ok) throw new Error(d.error);

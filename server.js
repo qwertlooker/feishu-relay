@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const lark = require('@larksuiteoapi/node-sdk');
+const { resolveRecipient } = require('./lib/recipient');
 
 const API_SECRET = process.env.API_SECRET;
 const USE_AUTH = !!API_SECRET;
@@ -168,9 +169,16 @@ app.get('/api/events', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/send', authMiddleware, async (req, res) => {
-  const { chatId, message, msgType = 'text' } = req.body;
+  const { chatId, message, msgType = 'text', receiveIdType } = req.body;
   if (!chatId || !message) {
     return res.status(400).json({ ok: false, error: 'chatId 和 message 不能为空' });
+  }
+
+  let recipient;
+  try {
+    recipient = resolveRecipient(chatId, receiveIdType);
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message });
   }
 
   try {
@@ -179,15 +187,16 @@ app.post('/api/send', authMiddleware, async (req, res) => {
       : JSON.stringify(message);
 
     const result = await feishuClient.im.message.create({
-      params: { receive_id_type: 'chat_id' },
-      data: { receive_id: chatId, msg_type: msgType, content },
+      params: { receive_id_type: recipient.receiveIdType },
+      data: { receive_id: recipient.id, msg_type: msgType, content },
     });
 
     if (result.code !== 0) throw new Error(result.msg || '发送失败');
 
     const msgData = {
       id: result.data?.message_id,
-      chatId,
+      chatId: recipient.id,
+      receiveIdType: recipient.receiveIdType,
       content: { text: message },
       msgType,
       createTime: Date.now().toString(),
@@ -197,7 +206,11 @@ app.post('/api/send', authMiddleware, async (req, res) => {
     await addMessage(msgData);        // ← 改成 await
     broadcastSSE('message', msgData);
 
-    res.json({ ok: true, data: result.data });
+    res.json({
+      ok: true,
+      data: result.data,
+      recipient: { id: recipient.id, receiveIdType: recipient.receiveIdType },
+    });
   } catch (err) {
     console.error('[发送失败]', err);
     res.status(500).json({ ok: false, error: err.message });
