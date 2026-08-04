@@ -126,7 +126,7 @@ body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
 
 /* ── Toasts ── */
 .toasts { position:fixed; top:18px; right:18px; display:flex; flex-direction:column; gap:8px; z-index:999; }
-.toast { padding:10px 16px; border-radius:10px; font-size:12.5px; animation:toastIn 0.25s ease; box-shadow:0 4px 16px rgba(0,0,0,0.4); }
+.toast { max-width:min(520px, calc(100vw - 36px)); padding:10px 16px; border-radius:10px; font-size:12.5px; line-height:1.5; overflow-wrap:anywhere; animation:toastIn 0.25s ease; box-shadow:0 4px 16px rgba(0,0,0,0.4); }
 @keyframes toastIn { from { opacity:0; transform:translateX(16px); } to { opacity:1; transform:translateX(0); } }
 .toast.ok { background:#14532d; color:#bbf7d0; }
 .toast.err { background:#7f1d1d; color:#fecaca; }
@@ -995,8 +995,14 @@ async function send() {
         receiveIdType:conv?.receiveIdType,
       }),
     });
-    const d = await r.json();
-    if (!d.ok) throw new Error(d.error);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) {
+      const parts = [d.error || `请求失败（HTTP ${r.status}）`];
+      if (d.code) parts.unshift(`错误码 ${d.code}`);
+      if (d.hint) parts.push(d.hint);
+      if (d.requestId) parts.push(`请求 ID: ${d.requestId}`);
+      throw new Error(parts.join('：'));
+    }
   } catch(e) {
     toast(e.message, 'err');
     inp.value = draft;

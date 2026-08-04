@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const lark = require('@larksuiteoapi/node-sdk');
 const { resolveRecipient } = require('./lib/recipient');
+const { createFeishuError, normalizeError } = require('./lib/error');
 
 const API_SECRET = process.env.API_SECRET;
 const USE_AUTH = !!API_SECRET;
@@ -191,7 +192,7 @@ app.post('/api/send', authMiddleware, async (req, res) => {
       data: { receive_id: recipient.id, msg_type: msgType, content },
     });
 
-    if (result.code !== 0) throw new Error(result.msg || '发送失败');
+    if (result.code !== 0) throw createFeishuError(result);
 
     const msgData = {
       id: result.data?.message_id,
@@ -213,7 +214,8 @@ app.post('/api/send', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('[发送失败]', err);
-    res.status(500).json({ ok: false, error: err.message });
+    const details = normalizeError(err);
+    res.status(502).json({ ok: false, ...details });
   }
 });
 
