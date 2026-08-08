@@ -48,7 +48,18 @@
 
     <!-- Search Box -->
     <div class="search-box" id="searchBox">
-      <input type="text" id="searchInput" placeholder="搜索消息..." oninput="searchMessages(this.value)">
+      <div class="search-input-row">
+        <input type="search" id="searchInput" placeholder="搜索消息..." oninput="searchMessages(this.value)">
+        <button type="button" onclick="closeSearch()" title="关闭搜索">×</button>
+      </div>
+      <div class="search-options">
+        <select id="searchScope" onchange="searchMessages(document.getElementById('searchInput').value)">
+          <option value="all">全部会话</option>
+          <option value="current">当前会话</option>
+        </select>
+        <span id="searchStatus">输入关键词搜索最近保存的消息</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
     </div>
 
     <div class="sidebar-section">

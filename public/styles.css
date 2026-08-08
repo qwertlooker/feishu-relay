@@ -181,11 +181,13 @@ body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
 
 /* ── Search Box ── */
 .search-box {
-  padding: 8px 12px;
+  padding: 10px 10px 8px;
   border-bottom: 1px solid var(--border);
   display: none;
 }
-.search-box input {
+.search-box.visible { display: block; }
+.search-input-row { display: flex; gap: 6px; }
+.search-input-row input {
   width: 100%;
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -195,8 +197,51 @@ body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
   font-size: 12px;
   outline: none;
 }
-.search-box input:focus { border-color: var(--accent); }
+.search-input-row input:focus { border-color: var(--accent); }
+.search-input-row button {
+  width: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg2);
+  color: var(--tx2);
+  cursor: pointer;
+  font-size: 18px;
+}
+.search-options { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+.search-options select {
+  max-width: 92px;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--tx2);
+  font-size: 11px;
+}
+.search-options span { min-width: 0; color: var(--tx3); font-size: 10px; line-height: 1.3; }
+.search-results { max-height: min(48vh, 420px); margin-top: 8px; overflow-y: auto; }
+.search-result {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tx1);
+  cursor: pointer;
+  text-align: left;
+}
+.search-result:hover, .search-result:focus { background: var(--bg2); outline: none; }
+.search-result-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+.search-result-conv { color: var(--accent2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-result-time { flex-shrink: 0; color: var(--tx3); }
+.search-result-snippet { margin-top: 4px; color: var(--tx2); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.search-empty { padding: 12px 4px; color: var(--tx3); font-size: 11px; text-align: center; }
 .search-highlight { background: rgba(79,142,247,0.3); border-radius: 2px; }
+.msg.search-target .bubble { animation: searchPulse 1.5s ease; }
+@keyframes searchPulse {
+  0%, 100% { box-shadow: none; }
+  30% { box-shadow: 0 0 0 3px rgba(79,142,247,0.55); }
+}
 
 /* ── Scroll to Bottom Button ── */
 .scroll-to-bottom {

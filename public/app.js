@@ -14,6 +14,9 @@ const S = {
   drafts: {},
   replyTarget: null,
   uploading: false,
+  searchResults: [],
+  searchTimer: null,
+  searchRequestId: 0,
 };
 
 // 从服务端加载数据
@@ -263,40 +266,139 @@ function renderConvs() {
 }
 
 // ── 搜索功能 ──────────────────────────────────────────────────
-function toggleSearch() {
+function toggleSearch(force) {
   const box = document.getElementById('searchBox');
-  box.style.display = box.style.display === 'none' ? 'block' : 'none';
-  if (box.style.display === 'block') {
+  const visible = typeof force === 'boolean' ? force : !box.classList.contains('visible');
+  box.classList.toggle('visible', visible);
+  if (visible) {
     document.getElementById('searchInput').focus();
   } else {
-    document.getElementById('searchInput').value = '';
-    searchMessages('');
+    closeSearch();
   }
 }
 
+function closeSearch() {
+  const box = document.getElementById('searchBox');
+  box.classList.remove('visible');
+  clearTimeout(S.searchTimer);
+  S.searchRequestId++;
+  S.searchResults = [];
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchResults').innerHTML = '';
+  document.getElementById('searchStatus').textContent = '输入关键词搜索最近保存的消息';
+}
+
 function searchMessages(query) {
-  if (!S.cur || !query) {
-    document.querySelectorAll('.msg').forEach((el, index) => {
-      el.style.display = 'flex';
-      const bubble = el.querySelector('.bubble');
-      const message = (S.msgs[S.cur] || [])[index];
-      if (bubble && message) bubble.innerHTML = renderBubbleContent(message);
-    });
+  clearTimeout(S.searchTimer);
+  const normalized = String(query || '').trim();
+  const status = document.getElementById('searchStatus');
+  const results = document.getElementById('searchResults');
+  const requestId = ++S.searchRequestId;
+  if (!normalized) {
+    S.searchResults = [];
+    status.textContent = '输入关键词搜索最近保存的消息';
+    results.innerHTML = '';
     return;
   }
-  const msgs = S.msgs[S.cur] || [];
-  document.querySelectorAll('.msg').forEach((el, idx) => {
-    const msg = msgs[idx];
-    if (!msg) return;
-    const text = extractText(msg).toLowerCase();
-    if (text.includes(query.toLowerCase())) {
-      el.style.display = 'flex';
-      const bubble = el.querySelector('.bubble');
-      if (bubble) bubble.innerHTML = renderBubbleContent(msg, query);
-    } else {
-      el.style.display = 'none';
-    }
+  status.textContent = '搜索中…';
+  results.innerHTML = '';
+  S.searchTimer = setTimeout(() => performMessageSearch(normalized, requestId), 250);
+}
+
+function localSearchMessages(query, chatId) {
+  const normalized = query.toLocaleLowerCase();
+  return Object.entries(S.msgs).flatMap(([id, messages]) =>
+    (chatId && id !== chatId ? [] : messages)
+      .filter(message => !message.deleted && extractText(message).toLocaleLowerCase().includes(normalized))
+  ).sort((a, b) => Number(b.createTime || 0) - Number(a.createTime || 0)).slice(0, 50);
+}
+
+async function performMessageSearch(query, requestId) {
+  const scope = document.getElementById('searchScope').value;
+  const chatId = scope === 'current' ? S.cur : '';
+  const params = new URLSearchParams({ q: query, limit: '50' });
+  if (chatId) params.set('chatId', chatId);
+  let source = '全部已保存消息';
+  try {
+    const response = await fetch(`${S.url}/api/messages/search?${params}`, {
+      headers: { 'x-api-key': S.token },
+    });
+    const data = await parseApiResponse(response);
+    if (requestId !== S.searchRequestId) return;
+    S.searchResults = data.data?.items || [];
+  } catch (error) {
+    if (requestId !== S.searchRequestId) return;
+    S.searchResults = localSearchMessages(query, chatId);
+    source = `仅已加载消息（${error.message}）`;
+  }
+  renderSearchResults(query, source);
+}
+
+function renderSearchResults(query, source) {
+  const results = document.getElementById('searchResults');
+  const status = document.getElementById('searchStatus');
+  status.textContent = `${S.searchResults.length} 条结果 · ${source}`;
+  if (!S.searchResults.length) {
+    results.innerHTML = '<div class="search-empty">没有找到匹配消息</div>';
+    return;
+  }
+  results.innerHTML = S.searchResults.map((message, index) => {
+    const conversation = S.convs.find(item => item.id === message.chatId);
+    return `<button type="button" class="search-result" data-search-index="${index}">
+      <span class="search-result-head">
+        <span class="search-result-conv">${esc(conversation?.name || message.chatId || '未知会话')}</span>
+        <span class="search-result-time">${esc(fmtTime(message.createTime))}</span>
+      </span>
+      <span class="search-result-snippet">${highlightSearchSnippet(extractText(message), query)}</span>
+    </button>`;
+  }).join('');
+  results.querySelectorAll('[data-search-index]').forEach(button => {
+    button.addEventListener('click', () => openSearchResult(Number(button.dataset.searchIndex)));
   });
+}
+
+function highlightSearchSnippet(text, query, maxLength = 120) {
+  const value = String(text || '').replace(/\s+/g, ' ');
+  const lower = value.toLocaleLowerCase();
+  const normalizedQuery = query.toLocaleLowerCase();
+  const matchIndex = lower.indexOf(normalizedQuery);
+  const start = Math.max(0, matchIndex - 35);
+  const end = Math.min(value.length, Math.max(start + maxLength, matchIndex + query.length + 35));
+  const snippet = value.slice(start, end);
+  const localIndex = snippet.toLocaleLowerCase().indexOf(normalizedQuery);
+  if (localIndex < 0) return esc(snippet);
+  return `${start ? '…' : ''}${esc(snippet.slice(0, localIndex))}`
+    + `<mark class="search-highlight">${esc(snippet.slice(localIndex, localIndex + query.length))}</mark>`
+    + `${esc(snippet.slice(localIndex + query.length))}${end < value.length ? '…' : ''}`;
+}
+
+async function openSearchResult(index) {
+  const message = S.searchResults[index];
+  if (!message?.chatId) return;
+  if (!S.msgs[message.chatId]) S.msgs[message.chatId] = [];
+  if (!S.msgs[message.chatId].some(item => item.id && item.id === message.id)) {
+    S.msgs[message.chatId].push(message);
+    S.msgs[message.chatId].sort((a, b) => Number(a.createTime || 0) - Number(b.createTime || 0));
+  }
+  if (!S.convs.some(item => item.id === message.chatId)) {
+    S.convs.push({
+      id: message.chatId,
+      name: `会话 ${message.chatId.slice(-6)}`,
+      type: message.chatType || 'group',
+      receiveIdType: message.receiveIdType,
+      unread: 0,
+    });
+    await saveConvs();
+  }
+  const messageId = message.id;
+  closeSearch();
+  await selectConv(message.chatId);
+  const target = messageId ? S.msgEls[messageId] : null;
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.add('search-target');
+    setTimeout(() => target.classList.remove('search-target'), 1600);
+  }
 }
 
 function escRegex(s) {
@@ -918,6 +1020,15 @@ document.getElementById('input').addEventListener('keydown', e => {
   if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
 document.getElementById('input').addEventListener('input', function(){ adjustTA(this); });
+
+document.addEventListener('keydown', event => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'f') {
+    event.preventDefault();
+    toggleSearch(true);
+  } else if (event.key === 'Escape' && document.getElementById('searchBox').classList.contains('visible')) {
+    closeSearch();
+  }
+});
 
 // Save draft on page unload (使用同步请求确保数据保存)
 window.addEventListener('beforeunload', () => {

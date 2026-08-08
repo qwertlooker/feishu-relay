@@ -188,6 +188,26 @@ function createApp({
     }
   });
 
+  app.get('/api/messages/search', authMiddleware, async (req, res) => {
+    const query = String(req.query.q || '').trim();
+    if (!query) {
+      return res.status(400).json({ ok: false, error: '搜索关键词不能为空' });
+    }
+    if (query.length > 200) {
+      return res.status(400).json({ ok: false, error: '搜索关键词不能超过 200 个字符' });
+    }
+    try {
+      const items = await storage.searchMessages(query, {
+        chatId: req.query.chatId ? String(req.query.chatId) : undefined,
+        limit: req.query.limit,
+      });
+      res.json({ ok: true, data: { items, count: items.length } });
+    } catch (error) {
+      logger.error('[消息搜索失败]', error);
+      res.status(500).json({ ok: false, error: '搜索消息失败，请稍后重试' });
+    }
+  });
+
   app.delete('/api/messages/:messageId', authMiddleware, async (req, res) => {
     try {
       await feishuService.withdrawMessage(req.params.messageId);
