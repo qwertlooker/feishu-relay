@@ -41,3 +41,8 @@ test('未知错误也返回可读原因', () => {
     error: '网络连接失败',
   });
 });
+
+test('超长和限频错误提供可执行提示', () => {
+  assert.match(normalizeError(createFeishuError({ code: 230020 })).hint, /稍后重试/);
+  assert.match(normalizeError(createFeishuError({ code: 230025 })).hint, /自动分段/);
+});
