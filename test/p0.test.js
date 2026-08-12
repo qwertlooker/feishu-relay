@@ -185,7 +185,7 @@ test('服务器暴露版本且网页仅在版本不一致时提示刷新', async
   const publicDir = path.join(__dirname, '..', 'public');
   const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(publicDir, 'app.js'), 'utf8');
-  assert.match(html, /name="app-version" content="1\.1\.0"/);
+  assert.match(html, /name="app-version" content="1\.1\.1"/);
   assert.match(html, /id="webVersion"/);
   assert.match(html, /id="serverVersion"/);
   assert.match(html, /id="versionAlert"/);

@@ -872,6 +872,36 @@ async function handleAttachment(file) {
   }
 }
 
+function clipboardImageName(file, index = 0) {
+  if (file.name && file.name !== 'image.png') return file.name;
+  const extension = file.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+  return `clipboard-${Date.now()}${index ? `-${index + 1}` : ''}.${extension}`;
+}
+
+async function handleClipboardPaste(event) {
+  const imageFiles = Array.from(event.clipboardData?.items || [])
+    .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+    .map(item => item.getAsFile())
+    .filter(Boolean);
+  if (!imageFiles.length) return;
+
+  event.preventDefault();
+  if (!S.cur) {
+    toast('请先选择会话，再粘贴图片', 'err');
+    return;
+  }
+  if (S.uploading) {
+    toast('上一张图片仍在发送，请稍后再试', 'info');
+    return;
+  }
+
+  for (let index = 0; index < imageFiles.length; index++) {
+    const source = imageFiles[index];
+    const image = new File([source], clipboardImageName(source, index), { type: source.type });
+    await handleAttachment(image);
+  }
+}
+
 // ── Config ────────────────────────────────────────────────────
 function toggleConfig() {
   const el = document.getElementById('cfg');
@@ -1067,6 +1097,9 @@ document.getElementById('input').addEventListener('keydown', e => {
   if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
 document.getElementById('input').addEventListener('input', function(){ adjustTA(this); });
+document.getElementById('input').addEventListener('paste', event => {
+  handleClipboardPaste(event).catch(error => toast(error.message, 'err'));
+});
 
 document.addEventListener('keydown', event => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'f') {

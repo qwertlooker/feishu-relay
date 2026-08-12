@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>飞书消息中心</title>
-<meta name="app-version" content="1.1.0">
+<meta name="app-version" content="1.1.1">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -116,7 +116,7 @@
           <button onclick="toggleEmojiPicker()" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:18px;padding:8px;" title="表情">😊</button>
           <button class="attach-btn" id="attachBtn" onclick="chooseAttachment()" title="发送图片或文件">📎</button>
           <input id="fileInput" type="file" hidden onchange="handleAttachment(this.files[0])">
-          <textarea class="msg-input" id="input" placeholder="输入消息… Enter 发送 · Shift+Enter 换行" rows="1"></textarea>
+          <textarea class="msg-input" id="input" placeholder="输入消息… 可粘贴图片 · Enter 发送" rows="1"></textarea>
           <button class="send-btn" id="sendBtn" onclick="send()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="white" id="sendIcon"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
           </button>

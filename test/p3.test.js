@@ -286,6 +286,9 @@ test('前端包含附件、回复、撤回和富文本渲染入口', () => {
   assert.match(html, /id="fileInput"/);
   assert.match(html, /id="replyBar"/);
   assert.match(script, /async function handleAttachment/);
+  assert.match(script, /async function handleClipboardPaste/);
+  assert.match(script, /addEventListener\('paste'/);
+  assert.match(script, /item\.type\.startsWith\('image\/'\)/);
   assert.match(script, /async function withdrawMessage/);
   assert.match(script, /function renderMessageContent/);
   assert.match(script, /msg\.msgType === 'audio'/);
