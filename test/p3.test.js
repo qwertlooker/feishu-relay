@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Readable } = require('node:stream');
-const { createApp } = require('../app');
+const { createApp, getUploadFileType } = require('../app');
 const { createFeishuService } = require('../lib/feishu-service');
 const { normalizeIncomingMessage } = require('../lib/messages');
 
@@ -134,6 +134,46 @@ test('飞书服务支持引用回复、图片文件上传和撤回', async () =>
   }), resource);
 });
 
+test('音视频上传类型正确映射，消息资源失败时回退到应用资源接口', async () => {
+  const calls = [];
+  const fallbackResource = { getReadableStream() {}, headers: {} };
+  const service = createFeishuService({
+    im: {
+      messageResource: { get: async () => { throw new Error('not available'); } },
+      image: {
+        get: async payload => { calls.push(['image', payload]); return fallbackResource; },
+      },
+      file: {
+        create: async payload => {
+          calls.push(['upload', payload]);
+          return { file_key: 'file_media' };
+        },
+        get: async payload => { calls.push(['file', payload]); return fallbackResource; },
+      },
+    },
+  });
+
+  assert.equal(getUploadFileType('file', 'audio/ogg', 'voice.ogg'), 'opus');
+  assert.equal(getUploadFileType('file', 'video/mp4', 'clip.mp4'), 'mp4');
+  assert.equal(getUploadFileType('file', 'application/pdf', 'report.pdf'), 'pdf');
+  assert.equal(getUploadFileType('file', 'application/zip', 'archive.zip'), 'stream');
+  assert.deepEqual(await service.uploadResource({
+    kind: 'file', buffer: Buffer.from('audio'), fileName: 'voice.ogg', fileType: 'opus',
+  }), { key: 'file_media', msgType: 'audio' });
+  assert.deepEqual(await service.uploadResource({
+    kind: 'file', buffer: Buffer.from('video'), fileName: 'clip.mp4', fileType: 'mp4',
+  }), { key: 'file_media', msgType: 'media' });
+
+  assert.equal(await service.getMessageResource({
+    messageId: 'om_out', fileKey: 'img_out', type: 'image',
+  }), fallbackResource);
+  assert.equal(await service.getMessageResource({
+    messageId: 'om_out', fileKey: 'file_out', type: 'file',
+  }), fallbackResource);
+  assert.equal(calls.some(([type]) => type === 'image'), true);
+  assert.equal(calls.some(([type]) => type === 'file'), true);
+});
+
 test('上传、引用发送和撤回 API 形成完整链路', async () => {
   const deps = createP3Dependencies();
   const app = createApp({ ...deps, apiSecret: 'token', logger: { log() {}, error() {} } });
@@ -193,7 +233,15 @@ test('上传、引用发送和撤回 API 形成完整链路', async () => {
       { headers: { 'x-api-key': 'token' } },
     );
     assert.equal(resourceResponse.status, 200);
+    assert.equal(resourceResponse.headers.get('content-disposition'), 'attachment');
     assert.equal(await resourceResponse.text(), 'fixture-resource');
+
+    const namedResourceResponse = await fetch(
+      `${baseUrl}/api/messages/om_reply/resources/file_1?type=file&name=${encodeURIComponent('说明.txt')}`,
+      { headers: { 'x-api-key': 'token' } },
+    );
+    assert.match(namedResourceResponse.headers.get('content-disposition'), /filename\*=UTF-8''/);
+    assert.equal(await namedResourceResponse.text(), 'fixture-resource');
 
     const deleteResponse = await fetch(`${baseUrl}/api/messages/om_reply`, {
       method: 'DELETE',
@@ -240,5 +288,8 @@ test('前端包含附件、回复、撤回和富文本渲染入口', () => {
   assert.match(script, /async function handleAttachment/);
   assert.match(script, /async function withdrawMessage/);
   assert.match(script, /function renderMessageContent/);
+  assert.match(script, /msg\.msgType === 'audio'/);
+  assert.match(script, /msg\.msgType === 'media'/);
+  assert.match(script, /content\.image_key && !content\.file_key/);
   assert.match(script, /getComputedStyle\(el\)\.display === 'none'/);
 });

@@ -823,6 +823,7 @@ async function handleAttachment(file) {
         'Content-Type': 'application/octet-stream',
         'x-api-key': S.token,
         'x-file-name': encodeURIComponent(file.name),
+        'x-file-type': file.type,
       },
       body: file,
     });
@@ -870,6 +871,8 @@ function extractText(msg) {
     if (typeof c === 'string') return c;
     if (c.text) return c.text;
     if (c.image_key) return '[图片]';
+    if (msg.msgType === 'audio') return c.file_name || '[音频]';
+    if (msg.msgType === 'media') return c.file_name || '[视频]';
     if (c.file_key) return c.file_name || '[文件]';
     const post = getPostContent(c);
     if (post) {
@@ -895,9 +898,10 @@ function getPostContent(content) {
   return Object.values(content).find(value => value && Array.isArray(value.content)) || null;
 }
 
-function resourceUrl(msg, fileKey, type) {
+function resourceUrl(msg, fileKey, type, fileName = '') {
   if (!msg.id || !fileKey) return '';
   const query = new URLSearchParams({ type, token: S.token });
+  if (fileName) query.set('name', fileName);
   return `${S.url}/api/messages/${encodeURIComponent(msg.id)}/resources/${encodeURIComponent(fileKey)}?${query}`;
 }
 
@@ -930,7 +934,7 @@ function renderMessageContent(msg, highlightQuery = '') {
   if (msg.deleted) return esc('[消息已撤回]');
   const content = msg.content || {};
 
-  if (msg.msgType === 'image' || content.image_key) {
+  if (msg.msgType === 'image' || (content.image_key && !content.file_key)) {
     const src = resourceUrl(msg, content.image_key, 'image');
     return src
       ? `<img class="message-image" src="${escAttr(src)}" alt="图片" loading="lazy" onclick="showImagePreview(this.src)">`
@@ -938,10 +942,22 @@ function renderMessageContent(msg, highlightQuery = '') {
   }
 
   if (msg.msgType === 'file' || content.file_key) {
-    const href = resourceUrl(msg, content.file_key, 'file');
+    if (msg.msgType === 'audio') {
+      const src = resourceUrl(msg, content.file_key, 'audio');
+      return src
+        ? `<div class="media-card"><audio controls preload="metadata" src="${escAttr(src)}"></audio><a href="${escAttr(src)}" target="_blank" rel="noopener">下载音频</a></div>`
+        : esc('[音频不可播放]');
+    }
+    if (msg.msgType === 'media') {
+      const src = resourceUrl(msg, content.file_key, 'media');
+      return src
+        ? `<div class="media-card"><video class="message-video" controls preload="metadata" src="${escAttr(src)}"></video><a href="${escAttr(src)}" target="_blank" rel="noopener">下载视频</a></div>`
+        : esc('[视频不可播放]');
+    }
+    const href = resourceUrl(msg, content.file_key, 'file', content.file_name || 'download');
     const name = content.file_name || '下载文件';
     return href
-      ? `<a class="file-card" href="${escAttr(href)}" target="_blank" rel="noopener"><span class="file-icon">📄</span><span class="file-name">${esc(name)}</span></a>`
+      ? `<a class="file-card" href="${escAttr(href)}" download="${escAttr(name)}"><span class="file-icon">📄</span><span class="file-name">${esc(name)}</span></a>`
       : esc(`[文件] ${name}`);
   }
 

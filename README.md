@@ -6,7 +6,7 @@
 
 - 飞书 WebSocket 长连接接收消息
 - SSE 实时推送消息到前端
-- 文本、图片和文件消息收发
+- 文本、图片、文件、Opus 音频和 MP4 视频消息收发
 - 超长文本发送前确认并按 UTF-8 字节安全分段
 - 引用回复与撤回机器人发送的消息
 - 飞书富文本消息安全渲染
@@ -74,11 +74,12 @@ SSE 实时消息流，连接后可实时接收消息。
 
 ### POST /api/upload
 
-上传图片或文件，随后把返回的 `content` 和 `msgType` 传给 `/api/send`。
+上传图片或文件，随后把返回的 `content` 和 `msgType` 传给 `/api/send`。服务会将 Opus/Ogg 音频映射为飞书 `audio` 消息，将 MP4 视频映射为 `media` 消息，其余附件作为普通文件发送。
 
 - 查询参数：`kind=image` 或 `kind=file`
 - 请求体：原始二进制，`Content-Type: application/octet-stream`
 - 请求头：`x-file-name` 使用 URL 编码后的文件名
+- 请求头：`x-file-type` 建议传入原始 MIME 类型，用于识别音频和视频
 - 限制：图片最大 10 MB，文件最大 30 MB
 
 ### DELETE /api/messages/:messageId
@@ -87,7 +88,7 @@ SSE 实时消息流，连接后可实时接收消息。
 
 ### GET /api/messages/:messageId/resources/:fileKey
 
-代理读取消息中的图片或文件资源。查询参数 `type` 支持 `image`、`file`、`audio`、`media`。
+代理读取消息中的图片、文件、音频或视频资源。查询参数 `type` 支持 `image`、`file`、`audio`、`media`；`name` 可指定下载文件名。接收的消息优先使用消息资源接口，机器人自己发送的资源会自动回退到应用图片/文件接口。
 
 ### GET /api/chats
 

@@ -98,6 +98,9 @@ body { font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
 .msg.out .msg-time { justify-content:flex-end; }
 .reply-quote { max-width:100%; margin-bottom:5px; padding:5px 8px; border-left:3px solid var(--accent); border-radius:4px; background:rgba(127,127,127,0.12); color:var(--tx2); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .message-image { display:block; max-width:min(360px, 55vw); max-height:360px; border-radius:8px; cursor:zoom-in; object-fit:contain; }
+.message-video { display:block; width:min(420px, 60vw); max-height:360px; border-radius:8px; background:#000; }
+.media-card { display:flex; flex-direction:column; align-items:flex-start; gap:7px; }
+.media-card audio { max-width:min(360px, 55vw); }
 .file-card { display:flex; align-items:center; gap:9px; min-width:180px; color:var(--tx1); text-decoration:none; white-space:normal; }
 .file-card:hover { color:var(--accent2); }
 .file-icon { font-size:24px; flex-shrink:0; }

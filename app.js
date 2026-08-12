@@ -35,6 +35,28 @@ function decodeFileName(value) {
   }
 }
 
+function getUploadFileType(kind, mimeType, fileName) {
+  if (kind === 'image') return undefined;
+  const mime = String(mimeType || '').toLowerCase();
+  const name = String(fileName || '').toLowerCase();
+  if (mime === 'audio/ogg' || mime === 'audio/opus' || name.endsWith('.opus')) return 'opus';
+  if (mime === 'video/mp4' || name.endsWith('.mp4')) return 'mp4';
+  const extension = name.split('.').pop();
+  return ['pdf', 'doc', 'xls', 'ppt'].includes(extension) ? extension : 'stream';
+}
+
+function getHeader(headers, name) {
+  if (!headers) return undefined;
+  if (typeof headers.get === 'function') return headers.get(name) || undefined;
+  return headers[name] || headers[name.toLowerCase()] || headers[name.toUpperCase()];
+}
+
+function getDownloadDisposition(fileName) {
+  const safeName = decodeFileName(fileName) || 'download';
+  const asciiName = safeName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`;
+}
+
 function createApp({
   apiSecret = '',
   storage,
@@ -60,6 +82,7 @@ function createApp({
     async (req, res) => {
       const kind = req.query.kind;
       const fileName = decodeFileName(req.headers['x-file-name']);
+      const mimeType = String(req.headers['x-file-type'] || '');
       if (kind !== 'image' && kind !== 'file') {
         return res.status(400).json({ ok: false, error: 'kind 必须是 image 或 file' });
       }
@@ -78,6 +101,7 @@ function createApp({
           kind,
           buffer: req.body,
           fileName: fileName || 'image',
+          fileType: getUploadFileType(kind, mimeType, fileName),
         });
         const content = resource.msgType === 'image'
           ? { image_key: resource.key }
@@ -86,7 +110,7 @@ function createApp({
           ok: true,
           msgType: resource.msgType,
           content,
-          ...(resource.msgType === 'file' ? { fileName } : {}),
+          ...(resource.msgType !== 'image' ? { fileName } : {}),
         });
       } catch (error) {
         logger.error('[上传失败]', error);
@@ -172,7 +196,7 @@ function createApp({
         msgType,
         replyPreview: typeof replyPreview === 'string' ? replyPreview.slice(0, 200) : undefined,
       });
-      if (msgType === 'file' && typeof fileName === 'string') {
+      if (['file', 'audio', 'media'].includes(msgType) && typeof fileName === 'string') {
         messageData.content.file_name = fileName.slice(0, 255);
       }
       await persistMessage(storage, messageData, logger);
@@ -236,13 +260,22 @@ function createApp({
           type,
         });
         const headers = resource.headers || {};
+        const contentType = getHeader(headers, 'content-type')
+          || (type === 'image' ? 'image/jpeg'
+            : type === 'audio' ? 'audio/ogg'
+              : type === 'media' ? 'video/mp4' : 'application/octet-stream');
         res.setHeader(
           'Content-Type',
-          headers['content-type'] || (type === 'image' ? 'image/*' : 'application/octet-stream'),
+          contentType,
         );
-        if (headers['content-length']) res.setHeader('Content-Length', headers['content-length']);
-        if (headers['content-disposition']) {
-          res.setHeader('Content-Disposition', headers['content-disposition']);
+        const contentLength = getHeader(headers, 'content-length');
+        const disposition = getHeader(headers, 'content-disposition');
+        if (contentLength) res.setHeader('Content-Length', contentLength);
+        if (type === 'file') {
+          res.setHeader(
+            'Content-Disposition',
+            req.query.name ? getDownloadDisposition(req.query.name) : disposition || 'attachment',
+          );
         }
         const stream = resource.getReadableStream();
         stream.on('error', error => {
@@ -353,4 +386,11 @@ function createApp({
   return app;
 }
 
-module.exports = { createApp, createAuthMiddleware, decodeFileName, isPlainObject };
+module.exports = {
+  createApp,
+  createAuthMiddleware,
+  decodeFileName,
+  getDownloadDisposition,
+  getUploadFileType,
+  isPlainObject,
+};
