@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>飞书消息中心</title>
+<meta name="app-version" content="1.1.0">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -16,6 +17,7 @@
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>
         <h1>飞书消息</h1>
+        <button class="version-alert" id="versionAlert" type="button" onclick="refreshForUpdate()" title="点击刷新到服务器最新版本">有新版本，请刷新</button>
         <div class="sidebar-actions">
           <button onclick="toggleConfig()" title="设置">⚙</button>
           <button onclick="cycleTheme()" id="themeBtn" title="切换主题">🌙</button>
@@ -44,6 +46,11 @@
         </select>
       </div>
       <button class="cfg-btn" onclick="applyConfig()">保存</button>
+      <div class="version-details">
+        <div><span>网页版本</span><code id="webVersion">--</code></div>
+        <div><span>服务器版本</span><code id="serverVersion">查询中…</code></div>
+        <button type="button" onclick="checkServerVersion()">查询版本</button>
+      </div>
     </div>
 
     <!-- Search Box -->

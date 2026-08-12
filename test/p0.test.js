@@ -167,3 +167,28 @@ test('前端静态资源已拆分且入口文件存在', () => {
   assert.equal(fs.existsSync(path.join(publicDir, 'styles.css')), true);
   assert.equal(fs.existsSync(path.join(publicDir, 'app.js')), true);
 });
+
+test('服务器暴露版本且网页仅在版本不一致时提示刷新', async () => {
+  const deps = createTestDependencies();
+  const app = createApp({
+    ...deps,
+    apiSecret: 'token',
+    appVersion: '9.8.7',
+    logger: { log() {}, error() {} },
+  });
+  await withServer(app, async baseUrl => {
+    const response = await fetch(`${baseUrl}/api/health`);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal((await response.json()).version, '9.8.7');
+  });
+
+  const publicDir = path.join(__dirname, '..', 'public');
+  const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(publicDir, 'app.js'), 'utf8');
+  assert.match(html, /name="app-version" content="1\.1\.0"/);
+  assert.match(html, /id="webVersion"/);
+  assert.match(html, /id="serverVersion"/);
+  assert.match(html, /id="versionAlert"/);
+  assert.match(script, /S\.serverVersion !== WEB_VERSION/);
+  assert.match(script, /window\.location\.reload/);
+});

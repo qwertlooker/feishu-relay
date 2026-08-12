@@ -1,3 +1,6 @@
+const WEB_VERSION = document.querySelector('meta[name="app-version"]')?.content || 'unknown';
+const BASE_DOCUMENT_TITLE = document.title;
+
 const S = {
   url: localStorage.getItem('relayUrl') || location.origin,
   token: localStorage.getItem('relayToken') || '',
@@ -17,6 +20,7 @@ const S = {
   searchResults: [],
   searchTimer: null,
   searchRequestId: 0,
+  serverVersion: null,
 };
 
 // 从服务端加载数据
@@ -52,6 +56,7 @@ document.getElementById('cfgUrl').value = S.url;
 document.getElementById('cfgToken').value = S.token;
 document.getElementById('cfgChatId').value = localStorage.getItem('defaultChatId') || '';
 document.getElementById('cfgTheme').value = S.theme;
+document.getElementById('webVersion').textContent = `v${WEB_VERSION}`;
 
 // 初始化：先加载服务端数据，再初始化界面
 async function init() {
@@ -160,7 +165,10 @@ async function connect() {
   const es = new EventSource(`${S.url}/api/events?token=${encodeURIComponent(S.token)}`);
   S.es = es;
 
-  es.addEventListener('connected', () => setStatus(true));
+  es.addEventListener('connected', event => {
+    setStatus(true);
+    try { updateVersionState(JSON.parse(event.data).version); } catch { checkServerVersion(); }
+  });
   es.addEventListener('message', e => onMsg(JSON.parse(e.data)).catch(console.error));
   es.addEventListener('history', e => {
     const msgs = JSON.parse(e.data);
@@ -179,6 +187,29 @@ function setStatus(ok) {
   S.connected = ok;
   document.getElementById('dot').className = 'dot' + (ok ? ' on' : '');
   document.getElementById('statusTx').textContent = ok ? '已连接' : '重连中…';
+}
+
+function updateVersionState(serverVersion) {
+  if (serverVersion) S.serverVersion = String(serverVersion);
+  document.getElementById('serverVersion').textContent = S.serverVersion ? `v${S.serverVersion}` : '未知';
+  const mismatch = Boolean(S.serverVersion && S.serverVersion !== WEB_VERSION);
+  document.getElementById('versionAlert').classList.toggle('visible', mismatch);
+  document.title = mismatch ? `【有新版本，请刷新】${BASE_DOCUMENT_TITLE}` : BASE_DOCUMENT_TITLE;
+}
+
+async function checkServerVersion() {
+  document.getElementById('serverVersion').textContent = '查询中…';
+  try {
+    const response = await fetch(`${S.url}/api/health?_=${Date.now()}`, { cache: 'no-store' });
+    const data = await parseApiResponse(response);
+    updateVersionState(data.version);
+  } catch (error) {
+    document.getElementById('serverVersion').textContent = '查询失败';
+  }
+}
+
+function refreshForUpdate() {
+  window.location.reload();
 }
 
 // ── 已读回执处理 ──────────────────────────────────────────────

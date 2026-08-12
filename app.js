@@ -3,6 +3,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { version: packageVersion } = require('./package.json');
 const { normalizeError } = require('./lib/error');
 const {
   FEISHU_TEXT_MAX_BYTES,
@@ -64,6 +65,7 @@ function createApp({
   sseHub,
   logger = console,
   publicDir = path.join(__dirname, 'public'),
+  appVersion = packageVersion,
 }) {
   if (!storage || !feishuService || !sseHub) {
     throw new TypeError('storage、feishuService 和 sseHub 均为必需依赖');
@@ -126,7 +128,11 @@ function createApp({
     res.setHeader('X-Accel-Buffering', 'no');
 
     const clientId = sseHub.add(res);
-    res.write(`event: connected\ndata: ${JSON.stringify({ clientId, time: Date.now() })}\n\n`);
+    res.write(`event: connected\ndata: ${JSON.stringify({
+      clientId,
+      time: Date.now(),
+      version: appVersion,
+    })}\n\n`);
 
     try {
       const recent = await storage.getRecentMessages(50);
@@ -369,7 +375,8 @@ function createApp({
   });
 
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, clients: sseHub.size });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true, clients: sseHub.size, version: appVersion });
   });
 
   app.use((error, req, res, next) => {
