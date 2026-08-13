@@ -14,6 +14,7 @@ class FakeRedis {
   constructor() {
     this.values = new Map();
     this.lists = new Map();
+    this.sets = new Map();
   }
 
   async rpush(key, ...values) {
@@ -41,6 +42,14 @@ class FakeRedis {
     list[index] = value;
     this.lists.set(key, list);
   }
+
+  async sadd(key, ...values) {
+    const set = this.sets.get(key) || new Set();
+    values.forEach(value => set.add(value));
+    this.sets.set(key, set);
+  }
+
+  async smembers(key) { return [...(this.sets.get(key) || [])]; }
 
   async get(key) { return this.values.get(key); }
   async set(key, value) { this.values.set(key, value); }
@@ -102,15 +111,38 @@ test('配置加载会报告缺失变量并校验端口', () => {
     UPSTASH_REDIS_REST_TOKEN: 'token',
     PORT: '70000',
   }), /PORT/);
+  assert.throws(() => loadConfig({
+    FEISHU_APP_ID: 'app', FEISHU_APP_SECRET: 'secret',
+    UPSTASH_REDIS_REST_URL: 'url', UPSTASH_REDIS_REST_TOKEN: 'token', MAX_CHATS: '0',
+  }), /MAX_CHATS/);
 });
 
-test('存储模块保留最近消息并兼容原有设置默认值', async () => {
-  const storage = createStorage(new FakeRedis(), { maxMessages: 2 });
-  await storage.addMessage({ id: '1' });
-  await storage.addMessage({ id: '2' });
-  await storage.addMessage({ id: '3' });
-  assert.deepEqual(await storage.getRecentMessages(50), [{ id: '2' }, { id: '3' }]);
+test('存储模块按会话独立限制消息并限制会话数量', async () => {
+  const storage = createStorage(new FakeRedis(), { maxMessagesPerChat: 2, maxChats: 2 });
+  await storage.addMessage({ id: 'a1', chatId: 'oc_a' });
+  await storage.addMessage({ id: 'a2', chatId: 'oc_a' });
+  await storage.addMessage({ id: 'a3', chatId: 'oc_a' });
+  await storage.addMessage({ id: 'b1', chatId: 'oc_b' });
+  assert.deepEqual((await storage.getRecentMessages('oc_a', 50)).map(item => item.id), ['a2', 'a3']);
+  assert.deepEqual((await storage.getRecentMessages('oc_b', 50)).map(item => item.id), ['b1']);
+  await assert.rejects(storage.addMessage({ id: 'c1', chatId: 'oc_c' }), /会话数量已达到上限 2/);
+  await assert.rejects(storage.saveConversations([{ id: 'a' }, { id: 'b' }, { id: 'c' }]), /不能超过 2/);
   assert.deepEqual(await storage.getSettings(), { theme: 'system' });
+});
+
+test('旧全局消息安全迁移到分会话列表且不会重复迁移', async () => {
+  const redis = new FakeRedis();
+  redis.lists.set('feishu:messages', [
+    { id: 'a1', chatId: 'oc_a' },
+    { id: 'b1', chatId: 'oc_b' },
+    { id: 'a2', chatId: 'oc_a' },
+  ]);
+  const storage = createStorage(redis, { maxMessagesPerChat: 10, maxChats: 5 });
+  assert.equal((await storage.migrateLegacyMessages()).messages, 3);
+  assert.deepEqual((await storage.getRecentMessages('oc_a')).map(item => item.id), ['a1', 'a2']);
+  assert.deepEqual((await storage.getRecentMessages('oc_b')).map(item => item.id), ['b1']);
+  assert.equal((await storage.migrateLegacyMessages()).messages, 0);
+  assert.equal(redis.lists.get('feishu:messages').length, 3);
 });
 
 test('飞书服务保持原有文本发送协议', async () => {
@@ -185,7 +217,7 @@ test('服务器暴露版本且网页仅在版本不一致时提示刷新', async
   const publicDir = path.join(__dirname, '..', 'public');
   const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(publicDir, 'app.js'), 'utf8');
-  assert.match(html, /name="app-version" content="1\.2\.0"/);
+  assert.match(html, /name="app-version" content="1\.3\.0"/);
   assert.match(html, /id="webVersion"/);
   assert.match(html, /id="serverVersion"/);
   assert.match(html, /id="versionAlert"/);

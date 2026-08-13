@@ -9,8 +9,16 @@ const { createStorage } = require('../lib/storage');
 const { getMessageSearchText } = require('../lib/messages');
 
 class SearchRedis {
-  constructor(messages) { this.messages = messages; }
-  async lrange() { return this.messages; }
+  constructor(messages) {
+    this.groups = new Map();
+    for (const message of messages) {
+      const key = `feishu:messages:${encodeURIComponent(message.chatId)}`;
+      if (!this.groups.has(key)) this.groups.set(key, []);
+      this.groups.get(key).push(message);
+    }
+  }
+  async smembers() { return [...this.groups.keys()].map(key => decodeURIComponent(key.slice('feishu:messages:'.length))); }
+  async lrange(key) { return this.groups.get(key) || []; }
 }
 
 async function withServer(app, callback) {
@@ -64,6 +72,27 @@ test('消息搜索 API 校验参数并返回跨会话结果', async () => {
   });
 });
 
+test('消息历史 API 只返回指定会话', async () => {
+  const storage = createStorage(new SearchRedis([
+    { id: 'a1', chatId: 'oc_a', createTime: '1', content: { text: 'A' } },
+    { id: 'b1', chatId: 'oc_b', createTime: '2', content: { text: 'B' } },
+  ]));
+  const app = createApp({
+    apiSecret: 'token', storage,
+    feishuService: { listChats: async () => ({ code: 0, data: {} }) },
+    sseHub: { size: 0, add: () => 'client', remove() {}, broadcast() {} },
+    logger: { log() {}, error() {} },
+  });
+  await withServer(app, async baseUrl => {
+    const response = await fetch(`${baseUrl}/api/chats/oc_a/messages?limit=50`, {
+      headers: { 'x-api-key': 'token' },
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.data.items.map(item => item.id), ['a1']);
+  });
+});
+
 test('前端提供搜索范围、结果列表、跳转和快捷键', () => {
   const publicDir = path.join(__dirname, '..', 'public');
   const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
@@ -72,5 +101,6 @@ test('前端提供搜索范围、结果列表、跳转和快捷键', () => {
   assert.match(html, /id="searchResults"/);
   assert.match(script, /async function performMessageSearch/);
   assert.match(script, /async function openSearchResult/);
+  assert.match(script, /api\/chats\/\$\{encodeURIComponent\(id\)\}\/messages/);
   assert.match(script, /event\.ctrlKey \|\| event\.metaKey/);
 });

@@ -170,14 +170,6 @@ async function connect() {
     try { updateVersionState(JSON.parse(event.data).version); } catch { checkServerVersion(); }
   });
   es.addEventListener('message', e => onMsg(JSON.parse(e.data)).catch(console.error));
-  es.addEventListener('history', e => {
-    const msgs = JSON.parse(e.data);
-    (async () => {
-      for (const m of msgs) {
-        await onMsg(m, true);
-      }
-    })().catch(console.error);
-  });
   es.addEventListener('read', e => onReadReceipt(JSON.parse(e.data)));
   es.addEventListener('message_deleted', e => onMessageDeleted(JSON.parse(e.data)));
   es.onerror = () => { setStatus(false); setTimeout(connect, 3000); };
@@ -626,6 +618,19 @@ async function selectConv(id) {
   cancelReply();
   
   S.cur = id;
+  if (!S.msgs[id]) {
+    try {
+      const params = new URLSearchParams({ limit: '50' });
+      const response = await fetch(`${S.url}/api/chats/${encodeURIComponent(id)}/messages?${params}`, {
+        headers: { 'x-api-key': S.token },
+      });
+      const data = await parseApiResponse(response);
+      S.msgs[id] = data.data?.items || [];
+    } catch (error) {
+      S.msgs[id] = [];
+      toast(error.message, 'err');
+    }
+  }
   const c = S.convs.find(x=>x.id===id);
   if (c) c.unread = 0;
   await saveConvs(); renderConvs();

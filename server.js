@@ -29,7 +29,13 @@ function start() {
     url: config.redisUrl,
     token: config.redisToken,
   });
-  const storage = createStorage(redis);
+  const storage = createStorage(redis, {
+    maxMessagesPerChat: config.maxMessagesPerChat,
+    maxChats: config.maxChats,
+  });
+  storage.migrateLegacyMessages()
+    .then(result => console.log('[Redis] 消息分会话迁移:', result))
+    .catch(error => console.error('[Redis] 消息分会话迁移失败，旧数据未删除:', error.message));
   const sseHub = createSseHub();
   const feishuClient = new lark.Client({
     appId: config.feishuAppId,

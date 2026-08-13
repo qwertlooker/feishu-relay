@@ -42,6 +42,8 @@ cp .env.example .env
 | `API_SECRET`                | API 密钥（必填，用于保护后端） |
 | `UPSTASH_REDIS_REST_URL`   | Upstash Redis REST 地址 |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST Token |
+| `MAX_MESSAGES_PER_CHAT`    | 每个会话保留的消息上限（默认 500） |
+| `MAX_CHATS`                | 消息会话数量上限（默认 100） |
 | `PORT`                      | 服务端口（默认 3000）   |
 
 ### 启动服务
@@ -94,6 +96,12 @@ SSE 实时消息流，连接后可实时接收消息。
 ### GET /api/chats
 
 获取群列表。
+
+### GET /api/chats/:chatId/messages
+
+读取指定会话的消息历史。支持 `limit`（最大 100）和 `before` 游标。Redis 使用 `feishu:messages:<chatId>` 为每个会话独立存储和裁剪消息，并通过 `feishu:message_chats` 维护会话索引。服务启动时会把旧 `feishu:messages` 数据幂等迁移到新结构，同时保留旧键作为回滚备份。
+
+也可手动审计和迁移：`npm run migrate:redis -- D:\\Work\\Code\\redis-restful.txt --dry-run`，确认后去掉 `--dry-run` 执行迁移。
 
 ### GET /api/health
 

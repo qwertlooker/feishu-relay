@@ -134,16 +134,6 @@ function createApp({
       version: appVersion,
     })}\n\n`);
 
-    try {
-      const recent = await storage.getRecentMessages(50);
-      logger.log(`[SSE] 发送 ${recent.length} 条历史消息给 ${clientId}`);
-      if (recent.length) {
-        res.write(`event: history\ndata: ${JSON.stringify(recent)}\n\n`);
-      }
-    } catch (error) {
-      logger.error('[Redis] getRecentMessages 失败', error);
-    }
-
     const heartbeat = setInterval(() => {
       try { res.write(': heartbeat\n\n'); } catch { /* close 事件负责清理 */ }
     }, 25000);
@@ -238,10 +228,23 @@ function createApp({
     }
   });
 
+  app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
+    try {
+      const data = await storage.getMessages(req.params.chatId, {
+        limit: req.query.limit,
+        before: req.query.before ? String(req.query.before) : undefined,
+      });
+      res.json({ ok: true, data });
+    } catch (error) {
+      logger.error('[消息历史加载失败]', error);
+      res.status(500).json({ ok: false, error: '消息历史加载失败，请稍后重试' });
+    }
+  });
+
   app.delete('/api/messages/:messageId', authMiddleware, async (req, res) => {
     try {
       await feishuService.withdrawMessage(req.params.messageId);
-      const message = await storage.markMessageDeleted(req.params.messageId);
+      const message = await storage.markMessageDeleted(req.params.messageId, req.query.chatId);
       const event = { messageId: req.params.messageId, message };
       sseHub.broadcast('message_deleted', event);
       res.json({ ok: true, data: event });
@@ -311,6 +314,9 @@ function createApp({
     if (!Array.isArray(req.body)) {
       return res.status(400).json({ ok: false, error: '会话列表必须是数组' });
     }
+    if (req.body.length > storage.maxChats) {
+      return res.status(400).json({ ok: false, error: `会话数量不能超过 ${storage.maxChats}` });
+    }
     try {
       await storage.saveConversations(req.body);
       res.json({ ok: true });
@@ -376,7 +382,15 @@ function createApp({
 
   app.get('/api/health', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ ok: true, clients: sseHub.size, version: appVersion });
+    res.json({
+      ok: true,
+      clients: sseHub.size,
+      version: appVersion,
+      limits: {
+        maxChats: storage.maxChats,
+        maxMessagesPerChat: storage.maxMessagesPerChat,
+      },
+    });
   });
 
   app.use((error, req, res, next) => {
