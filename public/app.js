@@ -8,7 +8,10 @@ const S = {
   convs: [],
   msgs: {},
   msgEls: {},
+  loadedChats: new Set(),
   cur: null,
+  historyChat: null,
+  conversationRequestId: 0,
   es: null,
   connected: false,
   contextMenuTarget: null,
@@ -16,7 +19,6 @@ const S = {
   isNearBottom: true,
   drafts: {},
   replyTarget: null,
-  uploading: false,
   searchResults: [],
   searchTimer: null,
   searchRequestId: 0,
@@ -87,6 +89,7 @@ if (msgsContainer) {
   msgsContainer.addEventListener('scroll', () => {
     const threshold = 100;
     const isBottom = msgsContainer.scrollHeight - msgsContainer.scrollTop - msgsContainer.clientHeight < threshold;
+    if (S.historyChat) return;
     S.isNearBottom = isBottom;
     if (isBottom) {
       document.getElementById('scrollToBottom').classList.remove('visible');
@@ -260,10 +263,8 @@ async function onMsg(msg, isHistory = false) {
   }
   renderConvs();
   if (msg.chatId === S.cur) {
-    appendMsg(msg);
-    if (isHistory) {
-      scrollBottom();
-    } else if (S.isNearBottom) {
+    if (!S.historyChat && (!msg.id || !S.msgEls[msg.id])) appendMsg(msg);
+    if (!S.historyChat && (isHistory || S.isNearBottom)) {
       scrollBottom();
     } else {
       S.newMsgCount++;
@@ -311,37 +312,43 @@ function closeSearch() {
   document.getElementById('searchStatus').textContent = '输入关键词搜索最近保存的消息';
 }
 
-function searchMessages(query) {
+function searchMessages() {
   clearTimeout(S.searchTimer);
-  const normalized = String(query || '').trim();
+  const query = document.getElementById('searchInput').value.trim();
+  const type = document.getElementById('searchType').value;
+  const scope = document.getElementById('searchScope').value;
   const status = document.getElementById('searchStatus');
   const results = document.getElementById('searchResults');
   const requestId = ++S.searchRequestId;
-  if (!normalized) {
-    S.searchResults = [];
+  S.searchResults = [];
+  results.innerHTML = '';
+  if (!query) {
     status.textContent = '输入关键词搜索最近保存的消息';
-    results.innerHTML = '';
+    return;
+  }
+  if (scope === 'current' && !S.cur) {
+    status.textContent = '请先选择会话';
     return;
   }
   status.textContent = '搜索中…';
-  results.innerHTML = '';
-  S.searchTimer = setTimeout(() => performMessageSearch(normalized, requestId), 250);
+  const chatId = scope === 'current' ? S.cur : '';
+  S.searchTimer = setTimeout(() => performMessageSearch(query, type, chatId, requestId), 250);
 }
 
-function localSearchMessages(query, chatId) {
+function localSearchMessages(query, type, chatId) {
   const normalized = query.toLocaleLowerCase();
   return Object.entries(S.msgs).flatMap(([id, messages]) =>
     (chatId && id !== chatId ? [] : messages)
-      .filter(message => !message.deleted && extractText(message).toLocaleLowerCase().includes(normalized))
+      .filter(message => !message.deleted && (type === 'all' || MessageSearch.getMessageType(message) === type)
+        && [extractText(message), message.replyPreview].join(' ').toLocaleLowerCase().includes(normalized))
   ).sort((a, b) => Number(b.createTime || 0) - Number(a.createTime || 0)).slice(0, 50);
 }
 
-async function performMessageSearch(query, requestId) {
-  const scope = document.getElementById('searchScope').value;
-  const chatId = scope === 'current' ? S.cur : '';
-  const params = new URLSearchParams({ q: query, limit: '50' });
+async function performMessageSearch(query, type, chatId, requestId) {
+  const params = new URLSearchParams({ q: query, type, limit: '50' });
   if (chatId) params.set('chatId', chatId);
-  let source = '全部已保存消息';
+  let source = chatId ? '当前会话' : '全部会话';
+  let isLocal = false;
   try {
     const response = await fetch(`${S.url}/api/messages/search?${params}`, {
       headers: { 'x-api-key': S.token },
@@ -351,13 +358,14 @@ async function performMessageSearch(query, requestId) {
     S.searchResults = data.data?.items || [];
   } catch (error) {
     if (requestId !== S.searchRequestId) return;
-    S.searchResults = localSearchMessages(query, chatId);
+    S.searchResults = localSearchMessages(query, type, chatId);
     source = `仅已加载消息（${error.message}）`;
+    isLocal = true;
   }
-  renderSearchResults(query, source);
+  renderSearchResults(query, source, isLocal);
 }
 
-function renderSearchResults(query, source) {
+function renderSearchResults(query, source, isLocal) {
   const results = document.getElementById('searchResults');
   const status = document.getElementById('searchStatus');
   status.textContent = `${S.searchResults.length} 条结果 · ${source}`;
@@ -367,16 +375,20 @@ function renderSearchResults(query, source) {
   }
   results.innerHTML = S.searchResults.map((message, index) => {
     const conversation = S.convs.find(item => item.id === message.chatId);
-    return `<button type="button" class="search-result" data-search-index="${index}">
+    const type = MessageSearch.labels[MessageSearch.getMessageType(message)];
+    const text = extractText(message);
+    const snippet = message.replyPreview && !text.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+      ? `${text} ${message.replyPreview}` : text;
+    return `<button type="button" class="search-result" data-search-index="${index}" ${message.id && message.chatId ? '' : 'disabled'}>
       <span class="search-result-head">
         <span class="search-result-conv">${esc(conversation?.name || message.chatId || '未知会话')}</span>
         <span class="search-result-time">${esc(fmtTime(message.createTime))}</span>
       </span>
-      <span class="search-result-snippet">${highlightSearchSnippet(extractText(message), query)}</span>
+      <span class="search-result-snippet"><span class="search-result-type">${type}</span>${highlightSearchSnippet(snippet, query)}</span>
     </button>`;
   }).join('');
   results.querySelectorAll('[data-search-index]').forEach(button => {
-    button.addEventListener('click', () => openSearchResult(Number(button.dataset.searchIndex)));
+    button.addEventListener('click', () => openSearchResult(Number(button.dataset.searchIndex), isLocal));
   });
 }
 
@@ -395,33 +407,9 @@ function highlightSearchSnippet(text, query, maxLength = 120) {
     + `${esc(snippet.slice(localIndex + query.length))}${end < value.length ? '…' : ''}`;
 }
 
-async function openSearchResult(index) {
+async function openSearchResult(index, isLocal) {
   const message = S.searchResults[index];
-  if (!message?.chatId) return;
-  if (!S.msgs[message.chatId]) S.msgs[message.chatId] = [];
-  if (!S.msgs[message.chatId].some(item => item.id && item.id === message.id)) {
-    S.msgs[message.chatId].push(message);
-    S.msgs[message.chatId].sort((a, b) => Number(a.createTime || 0) - Number(b.createTime || 0));
-  }
-  if (!S.convs.some(item => item.id === message.chatId)) {
-    S.convs.push({
-      id: message.chatId,
-      name: `会话 ${message.chatId.slice(-6)}`,
-      type: message.chatType || 'group',
-      receiveIdType: message.receiveIdType,
-      unread: 0,
-    });
-    await saveConvs();
-  }
-  const messageId = message.id;
-  closeSearch();
-  await selectConv(message.chatId);
-  const target = messageId ? S.msgEls[messageId] : null;
-  if (target) {
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    target.classList.add('search-target');
-    setTimeout(() => target.classList.remove('search-target'), 1600);
-  }
+  if (message?.id && message.chatId) await selectConv(message.chatId, { anchor: message, isLocal });
 }
 
 function escRegex(s) {
@@ -565,8 +553,16 @@ function insertEmoji(emoji) {
 }
 
 // ── Scroll to Bottom ─────────────────────────────────────────
-function scrollToBottomAndClear() {
+async function scrollToBottomAndClear() {
+  if (S.historyChat) {
+    await selectConv(S.historyChat);
+    return;
+  }
   scrollBottom();
+  resetNewMessageIndicator();
+}
+
+function resetNewMessageIndicator() {
   S.newMsgCount = 0;
   document.getElementById('newMsgCount').style.display = 'none';
   document.getElementById('scrollToBottom').classList.remove('visible');
@@ -612,29 +608,60 @@ function loadDraft() {
   }
 }
 
-async function selectConv(id) {
-  // Save draft of previous conversation
-  await saveDraft();
-  cancelReply();
-  
-  S.cur = id;
-  if (!S.msgs[id]) {
+async function selectConv(id, { anchor, isLocal } = {}) {
+  const requestId = ++S.conversationRequestId;
+  const searchRequestId = S.searchRequestId;
+  let hasNewer = false;
+  let history;
+  const cachedIds = new Set((S.msgs[id] || []).map(message => message.id));
+  if (anchor ? !isLocal : !S.loadedChats.has(id)) {
     try {
       const params = new URLSearchParams({ limit: '50' });
+      if (anchor) params.set('around', anchor.id);
       const response = await fetch(`${S.url}/api/chats/${encodeURIComponent(id)}/messages?${params}`, {
         headers: { 'x-api-key': S.token },
       });
       const data = await parseApiResponse(response);
-      S.msgs[id] = data.data?.items || [];
+      history = data.data.items;
+      hasNewer = Boolean(data.data.hasNewer);
     } catch (error) {
-      S.msgs[id] = [];
+      if (requestId !== S.conversationRequestId || (anchor && searchRequestId !== S.searchRequestId)) return;
       toast(error.message, 'err');
+      if (anchor || S.historyChat === id) return;
     }
   }
-  const c = S.convs.find(x=>x.id===id);
-  if (c) c.unread = 0;
-  await saveConvs(); renderConvs();
+  if (requestId !== S.conversationRequestId || (anchor && searchRequestId !== S.searchRequestId)) return;
 
+  if (anchor && !(history || S.msgs[id] || []).some(message => message.id === anchor.id && !message.deleted)) {
+    toast('这条消息已不存在或已被撤回', 'err');
+    return;
+  }
+  if (history) {
+    const historyIds = new Set(history.map(message => message.id));
+    const newMessages = (S.msgs[id] || []).filter(message => !cachedIds.has(message.id) && !historyIds.has(message.id));
+    S.msgs[id] = hasNewer ? history : history.concat(newMessages);
+    if (hasNewer) S.loadedChats.delete(id);
+    else S.loadedChats.add(id);
+  }
+
+  const stayInHistory = anchor && (hasNewer || (isLocal && !S.loadedChats.has(id)));
+  if (anchor) closeSearch();
+  void saveDraft();
+  cancelReply();
+  S.cur = id;
+  S.historyChat = stayInHistory ? id : null;
+  S.isNearBottom = !anchor;
+  resetNewMessageIndicator();
+  document.getElementById('scrollToBottom').classList.toggle('visible', Boolean(stayInHistory));
+
+  let c = S.convs.find(item => item.id === id);
+  if (!c && anchor) {
+    c = { id, name: `会话 ${id.slice(-6)}`, type: anchor.chatType || 'group', receiveIdType: anchor.receiveIdType };
+    S.convs.push(c);
+  }
+  if (c) c.unread = 0;
+  renderConvs();
+  void saveConvs();
   document.getElementById('empty').style.display = 'none';
   const cv = document.getElementById('chatView');
   cv.style.display = 'flex';
@@ -647,12 +674,23 @@ async function selectConv(id) {
   el.innerHTML = '';
   S.msgEls = {};
   (S.msgs[id]||[]).forEach(appendMsg);
-  scrollBottom();
-  
-  // Load draft for new conversation
   document.getElementById('input').value = '';
   loadDraft();
-  document.getElementById('input').focus();
+  const target = anchor && S.msgEls[anchor.id];
+  if (target) {
+    target.tabIndex = -1;
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: 'center' });
+    if (el.scrollHeight - el.scrollTop - el.clientHeight >= 100) {
+      document.getElementById('scrollToBottom').classList.add('visible');
+    }
+    target.classList.add('search-target');
+    setTimeout(() => target.classList.remove('search-target'), 1600);
+  } else {
+    document.getElementById('input').focus({ preventScroll: true });
+    scrollBottom();
+  }
+  if (!anchor && document.getElementById('searchBox').classList.contains('visible')) searchMessages();
 }
 
 async function addConv() {
@@ -732,7 +770,10 @@ function appendMsg(msg) {
 
 function scrollBottom() {
   const el = document.getElementById('msgs');
-  if (el) requestAnimationFrame(()=>el.scrollTop=el.scrollHeight);
+  const renderedMessages = S.msgEls;
+  if (el) requestAnimationFrame(() => {
+    if (renderedMessages === S.msgEls) el.scrollTop = el.scrollHeight;
+  });
 }
 
 // ── 发送消息 ──────────────────────────────────────────────────
@@ -759,7 +800,8 @@ async function parseApiResponse(response) {
 }
 
 async function requestSend(message, msgType = 'text', metadata = {}) {
-  const conv = S.convs.find(c => c.id === S.cur);
+  const chatId = metadata.chatId ?? S.cur;
+  const conv = S.convs.find(c => c.id === chatId);
   const replyTarget = metadata.replyTarget === undefined ? S.replyTarget : metadata.replyTarget;
   const response = await fetch(`${S.url}/api/send`, {
     method: 'POST',
@@ -768,7 +810,7 @@ async function requestSend(message, msgType = 'text', metadata = {}) {
       'x-api-key': S.token,
     },
     body: JSON.stringify({
-      chatId: S.cur,
+      chatId,
       message,
       msgType,
       receiveIdType: conv?.receiveIdType,
@@ -834,23 +876,48 @@ async function send() {
 }
 
 function chooseAttachment() {
-  if (!S.cur || S.uploading) return;
+  if (!S.cur || document.getElementById('sendBtn').disabled) return;
   document.getElementById('fileInput').click();
 }
 
-async function handleAttachment(file) {
+async function handleAttachments(files) {
   const input = document.getElementById('fileInput');
-  if (!file || !S.cur || S.uploading) return;
+  const attachments = Array.from(files);
+  input.value = '';
+  if (!attachments.length) return;
+  if (!S.cur) {
+    toast('请先选择会话，再发送附件', 'err');
+    return;
+  }
+  if (document.getElementById('sendBtn').disabled) {
+    toast('正在发送，请稍后再试', 'info');
+    return;
+  }
+
+  const chatId = S.cur;
+  let replyTarget = S.replyTarget;
+  setSendingState(true);
+  try {
+    for (const file of attachments) {
+      if (await handleAttachment(file, { chatId, replyTarget })) {
+        if (S.cur === chatId && S.replyTarget === replyTarget && replyTarget) cancelReply();
+        replyTarget = null;
+      }
+    }
+  } finally {
+    setSendingState(false);
+    if (S.cur === chatId) document.getElementById('input').focus({ preventScroll: true });
+  }
+}
+
+async function handleAttachment(file, { chatId, replyTarget }) {
   const kind = file.type.startsWith('image/') ? 'image' : 'file';
   const maxBytes = kind === 'image' ? 10 * 1024 * 1024 : 30 * 1024 * 1024;
   if (file.size === 0 || file.size > maxBytes) {
     toast(`${kind === 'image' ? '图片' : '文件'}大小必须在 1 字节到 ${kind === 'image' ? 10 : 30} MB 之间`, 'err');
-    input.value = '';
     return;
   }
 
-  S.uploading = true;
-  setSendingState(true);
   toast(`正在上传 ${file.name}…`, 'info');
   try {
     const response = await fetch(`${S.url}/api/upload?kind=${kind}`, {
@@ -864,17 +931,37 @@ async function handleAttachment(file) {
       body: file,
     });
     const uploaded = await parseApiResponse(response);
-    await requestSend(uploaded.content, uploaded.msgType, { fileName: uploaded.fileName });
-    cancelReply();
+    await requestSend(uploaded.content, uploaded.msgType, { chatId, replyTarget, fileName: uploaded.fileName });
     toast(`${file.name} 已发送`, 'ok');
+    return true;
   } catch (error) {
-    toast(error.message, 'err');
-  } finally {
-    S.uploading = false;
-    setSendingState(false);
-    input.value = '';
-    document.getElementById('input').focus();
+    toast(`${file.name}：${error.message}`, 'err');
   }
+}
+
+function initAttachmentDrop() {
+  const chat = document.getElementById('chat');
+  const reset = () => chat.classList.remove('dragging-files');
+  document.addEventListener('dragover', event => {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    const overChat = chat.contains(event.target);
+    const canDrop = overChat && S.cur && !document.getElementById('sendBtn').disabled;
+    chat.classList.toggle('dragging-files', Boolean(canDrop));
+    event.dataTransfer.dropEffect = canDrop ? 'copy' : 'none';
+  });
+  chat.addEventListener('dragleave', event => {
+    if (!chat.contains(event.relatedTarget)) reset();
+  });
+  document.addEventListener('drop', event => {
+    reset();
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    if (!chat.contains(event.target)) return;
+    const files = event.dataTransfer.files;
+    if (files.length) void handleAttachments(files);
+    else toast('请拖入可以读取的文件', 'err');
+  });
 }
 
 function clipboardImageName(file, index = 0) {
@@ -891,20 +978,8 @@ async function handleClipboardPaste(event) {
   if (!imageFiles.length) return;
 
   event.preventDefault();
-  if (!S.cur) {
-    toast('请先选择会话，再粘贴图片', 'err');
-    return;
-  }
-  if (S.uploading) {
-    toast('上一张图片仍在发送，请稍后再试', 'info');
-    return;
-  }
-
-  for (let index = 0; index < imageFiles.length; index++) {
-    const source = imageFiles[index];
-    const image = new File([source], clipboardImageName(source, index), { type: source.type });
-    await handleAttachment(image);
-  }
+  await handleAttachments(imageFiles.map((file, index) =>
+    new File([file], clipboardImageName(file, index), { type: file.type })));
 }
 
 // ── Config ────────────────────────────────────────────────────
@@ -1105,6 +1180,7 @@ document.getElementById('input').addEventListener('input', function(){ adjustTA(
 document.getElementById('input').addEventListener('paste', event => {
   handleClipboardPaste(event).catch(error => toast(error.message, 'err'));
 });
+initAttachmentDrop();
 
 document.addEventListener('keydown', event => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'f') {

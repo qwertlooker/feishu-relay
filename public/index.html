@@ -56,16 +56,24 @@
     <!-- Search Box -->
     <div class="search-box" id="searchBox">
       <div class="search-input-row">
-        <input type="search" id="searchInput" placeholder="搜索消息..." oninput="searchMessages(this.value)">
+        <input type="search" id="searchInput" aria-label="搜索关键词" placeholder="搜索消息或文件名…" oninput="searchMessages()">
         <button type="button" onclick="closeSearch()" title="关闭搜索">×</button>
       </div>
       <div class="search-options">
-        <select id="searchScope" onchange="searchMessages(document.getElementById('searchInput').value)">
+        <select id="searchScope" aria-label="搜索范围" onchange="searchMessages()">
           <option value="all">全部会话</option>
           <option value="current">当前会话</option>
         </select>
-        <span id="searchStatus">输入关键词搜索最近保存的消息</span>
+        <select id="searchType" aria-label="结果类型" onchange="searchMessages()">
+          <option value="all">全部类型</option>
+          <option value="message">消息</option>
+          <option value="file">文件</option>
+          <option value="image">图片</option>
+          <option value="media">音视频</option>
+          <option value="other">其他</option>
+        </select>
       </div>
+      <div class="search-status" id="searchStatus" role="status">输入关键词搜索最近保存的消息</div>
       <div class="search-results" id="searchResults"></div>
     </div>
 
@@ -115,7 +123,7 @@
         <div class="input-row">
           <button onclick="toggleEmojiPicker()" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:18px;padding:8px;" title="表情">😊</button>
           <button class="attach-btn" id="attachBtn" onclick="chooseAttachment()" title="发送图片或文件">📎</button>
-          <input id="fileInput" type="file" hidden onchange="handleAttachment(this.files[0])">
+          <input id="fileInput" type="file" hidden onchange="handleAttachments(this.files)">
           <textarea class="msg-input" id="input" placeholder="输入消息… 可粘贴图片 · Enter 发送" rows="1"></textarea>
           <button class="send-btn" id="sendBtn" onclick="send()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="white" id="sendIcon"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
@@ -124,12 +132,12 @@
       </div>
 
       <!-- Scroll to Bottom Button -->
-      <div class="scroll-to-bottom" id="scrollToBottom" onclick="scrollToBottomAndClear()">
+      <button class="scroll-to-bottom" id="scrollToBottom" type="button" aria-label="返回最新消息" title="返回最新消息" onclick="scrollToBottomAndClear()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tx2)" stroke-width="2">
           <path d="M12 5v14M5 12l7 7 7-7"/>
         </svg>
         <span class="badge-count" id="newMsgCount" style="display:none;">0</span>
-      </div>
+      </button>
     </div>
   </div>
 </div>
@@ -152,6 +160,7 @@
 </div>
 
 <script src="/text-splitter.js" defer></script>
+<script src="/message-search.js" defer></script>
 <script src="/app.js" defer></script>
 </body>
 </html>

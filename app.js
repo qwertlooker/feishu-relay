@@ -12,6 +12,7 @@ const {
 } = require('./lib/messages');
 const { resolveRecipient } = require('./lib/recipient');
 const { persistMessage } = require('./lib/feishu-events');
+const { labels: searchTypeLabels } = require('./public/message-search');
 
 function createAuthMiddleware(apiSecret) {
   return function authMiddleware(req, res, next) {
@@ -210,6 +211,10 @@ function createApp({
 
   app.get('/api/messages/search', authMiddleware, async (req, res) => {
     const query = String(req.query.q || '').trim();
+    const type = req.query.type ?? 'all';
+    if (typeof type !== 'string' || !Object.hasOwn(searchTypeLabels, type)) {
+      return res.status(400).json({ ok: false, error: '不支持的搜索类型' });
+    }
     if (!query) {
       return res.status(400).json({ ok: false, error: '搜索关键词不能为空' });
     }
@@ -220,6 +225,7 @@ function createApp({
       const items = await storage.searchMessages(query, {
         chatId: req.query.chatId ? String(req.query.chatId) : undefined,
         limit: req.query.limit,
+        type,
       });
       res.json({ ok: true, data: { items, count: items.length } });
     } catch (error) {
@@ -229,11 +235,19 @@ function createApp({
   });
 
   app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
+    const around = req.query.around;
+    if (around !== undefined && (typeof around !== 'string' || !around.trim() || req.query.before !== undefined)) {
+      return res.status(400).json({ ok: false, error: 'around 必须是非空消息 ID，且不能与 before 同时使用' });
+    }
     try {
       const data = await storage.getMessages(req.params.chatId, {
         limit: req.query.limit,
         before: req.query.before ? String(req.query.before) : undefined,
+        around: around?.trim(),
       });
+      if (data === null) {
+        return res.status(404).json({ ok: false, error: '这条消息已不存在或已被撤回' });
+      }
       res.json({ ok: true, data });
     } catch (error) {
       logger.error('[消息历史加载失败]', error);

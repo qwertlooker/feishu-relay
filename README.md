@@ -8,12 +8,15 @@
 - SSE 实时推送消息到前端
 - 文本、图片、文件、Opus 音频和 MP4 视频消息收发
 - 在消息输入框直接粘贴剪贴板图片并发送
+- 将文件或图片拖入已打开的会话，松开后依次上传并发送
 - 超长文本发送前确认并按 UTF-8 字节安全分段
 - 引用回复与撤回机器人发送的消息
 - 飞书富文本消息安全渲染
 - REST API 发送、上传和资源下载
 - 消息历史存储
 - 草稿、跨会话消息搜索、会话管理、主题和已读状态
+
+在搜索框中输入关键词，可按会话范围和消息、文件、图片、音视频或其他类型筛选。点击结果可定位到原会话中的消息，右下角按钮可返回最新消息。
 
 ## 快速开始
 
@@ -101,13 +104,24 @@ SSE 实时消息流，连接后可实时接收消息。
 
 读取指定会话的消息历史。支持 `limit`（最大 100）和 `before` 游标。Redis 使用 `feishu:messages:<chatId>` 为每个会话独立存储和裁剪消息，并通过 `feishu:message_chats` 维护会话索引。服务启动时会把旧 `feishu:messages` 数据幂等迁移到新结构，同时保留旧键作为回滚备份。
 
+传入 `around=<消息 ID>` 可读取包含该消息的上下文窗口，响应中的 `hasNewer` 表示窗口之后还有消息。`around` 与 `before` 互斥，目标不存在或已撤回时返回 404。
+
 也可手动审计和迁移：`npm run migrate:redis -- D:\\Work\\Code\\redis-restful.txt --dry-run`，确认后去掉 `--dry-run` 执行迁移。
+
+### GET /api/messages/search
+
+使用必填的 `q` 搜索已保留消息的正文、富文本、文件名和回复摘要。可用 `chatId` 限定会话，用 `limit` 限定返回数量（默认 50，最大 100）。`type` 支持 `all`、`message`、`file`、`image`、`media`、`other`，默认为 `all`。
 
 ### GET /api/health
 
 返回服务健康状态、当前连接数和服务器版本。网页和服务器版本仅在设置中展示；版本不一致时，标题栏会显示“有新版本，请刷新”。
 
 健康检查。
+
+## 测试
+
+- `npm test` 运行单元和接口回归测试。
+- 安装 Python Playwright 和 Chromium 后，运行 `python test/browser_search_upload.py` 验证搜索定位、类型筛选和附件拖放。浏览器测试使用本机模拟接口。
 
 ## 使用 Docker
 
